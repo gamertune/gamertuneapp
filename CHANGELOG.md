@@ -16,6 +16,8 @@ Versions before 1.0.0 are pre-release: features and defaults may still change.
 
 ## [Unreleased]
 
+## [0.1.71] - 2026-10-06
+
 ### Fixed
 - **Your custom power plan now carries the app's current name.** After upgrading,
   the plan GamerTune built for your CPU still showed its old name in Windows'
