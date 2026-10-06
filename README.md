@@ -26,7 +26,7 @@ A lightweight Windows 11 tray app that watches gaming-related display and system
 
 If you've ever fired up a game and realized 30 minutes later that HDR turned itself off after the last driver update, or that you've been gaming at 60 Hz instead of your monitor's actual max — GamerTune is for that. It periodically compares Windows settings against your preferences and either prompts you to fix drift in one click, or silently corrects it in the background.
 
-It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. Working set is trimmed back to ~25 MB at idle. No process spawning, no kernel hooks, no DPC callbacks.
+It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. Its memory use is trimmed back to about 25 MB of RAM when idle — a tiny amount, less than a single web browser tab. No process spawning, no kernel hooks, no DPC callbacks.
 
 ## Highlights
 
@@ -36,7 +36,7 @@ It's also paranoid about not making your gaming worse. Polling pauses entirely d
 - ⚡ **One-click apply** with a per-setting auto-apply opt-in
 - 🪟 **Native Win11 Fluent design** with light / dark / system themes
 - 🔄 **Auto-update** — checks GitHub Releases on startup, one-click install
-- 🪶 **~23 MB idle working set**, ~10 ms per polling tick
+- 🪶 **~23 MB of RAM when idle** — a tiny footprint, less than a single browser tab; ~10 ms per polling tick
 
 ## Screenshots
 
@@ -114,7 +114,7 @@ Policy-toggle disables for Copilot, Recall, Click-to-Do, Edge Copilot/Hubs/GenAI
 
 Designed to be invisible during gameplay.
 
-- **~23 MB working set** at idle, **~10 ms** per polling tick. Only the four display settings (HDR, refresh rate, resolution, DRR) are polled on the fast interval (default 30 s); the ~40 set-and-forget registry / policy / service settings are re-checked at startup, on resume / unlock / display-change events, and on a slow 10-minute backstop instead — so the fast tick does almost nothing most of the time.
+- **~23 MB of RAM** at idle (a tiny amount, less than a single browser tab), **~10 ms** per polling tick. Only the four display settings (HDR, refresh rate, resolution, DRR) are polled on the fast interval (default 30 s); the ~40 set-and-forget registry / policy / service settings are re-checked at startup, on resume / unlock / display-change events, and on a slow 10-minute backstop instead — so the fast tick does almost nothing most of the time.
 - **Pauses entirely** during fullscreen games, borderless-fullscreen games, and known benchmarks (3DMark, Cinebench, Geekbench, AIDA64, Unigine, OCCT, etc.).
 - **No process spawning** for reads. Power plan reads/writes go through `powrprof.dll` directly.
 - **No kernel hooks, no drivers, no admin** — only HKLM writes need elevation, which prompts UAC.
