@@ -1,0 +1,401 @@
+namespace GamerTune.Services;
+
+/// <summary>
+/// Per-setting documentation: what mechanism the app actually uses to read/write
+/// the setting, and a copy-pasteable PowerShell command users can run to verify
+/// the value externally.
+/// </summary>
+public static class SettingDocs
+{
+    public static string MechanismFor(string settingId)
+    {
+        if (settingId.StartsWith("hdr:")) return "DisplayConfigSetDeviceInfo (CCD API)";
+        if (settingId.StartsWith("refresh:")) return "ChangeDisplaySettingsEx (DEVMODE.dmDisplayFrequency)";
+        if (settingId.StartsWith("resolution:")) return "ChangeDisplaySettingsEx (DEVMODE.dmPelsWidth/Height)";
+        if (settingId.StartsWith("drr:")) return "SetDisplayConfig (CCD API; DISPLAYCONFIG_PATH_BOOST_REFRESH_RATE + SDC_VIRTUAL_REFRESH_RATE_AWARE)";
+        if (settingId.StartsWith("service:"))
+        {
+            var name = settingId["service:".Length..];
+            var def = ServiceCatalog.All.FirstOrDefault(d =>
+                d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (def?.PolicyOverride is { } po)
+                return $"reg add HKLM\\{po.PolicyKey} /v {po.PolicyValue} (Group Policy override; Windows reverts the standard sc.exe path)";
+            return $"sc.exe stop / config (writes HKLM\\SYSTEM\\CurrentControlSet\\Services\\{name}\\Start)";
+        }
+        if (settingId.StartsWith("task:"))
+        {
+            var path = settingId["task:".Length..];
+            return $"schtasks /Change /TN \"{path}\" /Disable (sets the Task Scheduler enabled flag)";
+        }
+        if (settingId.StartsWith("ai.app:"))
+        {
+            var pkg = settingId["ai.app:".Length..];
+            return $"Get-AppxPackage / Remove-AppxPackage (package: {pkg})";
+        }
+        return settingId switch
+        {
+            "hags" => @"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\HwSchMode (DWORD)",
+            "memintegrity" => @"HKLM\SYSTEM\...\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity\Enabled (DWORD)",
+            "vbs" => @"HKLM\SYSTEM\...\Control\DeviceGuard {EnableVirtualizationBasedSecurity, RequirePlatformSecurityFeatures, Mandatory, HypervisorEnforcedCodeIntegrity (root value: tool-precedented, not MS-documented)}  +  DeviceGuard\Scenarios\*\Enabled (every scenario subkey, re-enable metadata deleted)  +  Control\Lsa\LsaCfgFlags  +  HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceGuard {EnableVirtualizationBasedSecurity, LsaCfgFlags, HypervisorEnforcedCodeIntegrity} (all DWORD; explicit 0 = disabled; reboot required)",
+            "gamemode" => @"HKCU\Software\Microsoft\GameBar\AutoGameModeEnabled / AllowAutoGameMode",
+            "gamedvr" => @"HKCU\System\GameConfigStore\GameDVR_Enabled  +  HKCU\...\GameDVR\AppCaptureEnabled  +  HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR\AllowGameDVR (policy lock)",
+            "mouseaccel" => @"user32.SystemParametersInfo SPI_SETMOUSE  +  HKCU\Control Panel\Mouse",
+            "fso" => @"HKCU\System\GameConfigStore (GameDVR_FSEBehaviorMode + 3 related DWORDs)",
+            "vrr" => @"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\VRROptimizeEnable (DWORD)",
+            "sysresponse" => @"HKLM\SOFTWARE\...\Multimedia\SystemProfile\SystemResponsiveness (DWORD)",
+            "netthrottle" => @"HKLM\SOFTWARE\...\Multimedia\SystemProfile\NetworkThrottlingIndex (DWORD)",
+            "usbsuspend" => @"HKLM\SYSTEM\CurrentControlSet\Services\USB\DisableSelectiveSuspend (DWORD)",
+            "gamestask" => @"HKLM\SOFTWARE\...\Multimedia\SystemProfile\Tasks\Games (Priority + Scheduling Category + SFIO Priority)",
+            "powerplan" => @"powrprof.dll PowerSetActiveScheme  (verifiable via 'powercfg /getactivescheme')",
+            "cpuplan" => @"powrprof.dll PowerDuplicateScheme + PowerWriteAC/DCValueIndex (build a Balanced-clone tuned plan) + PowerSetActiveScheme  (verifiable via 'powercfg /query <guid> SUB_PROCESSOR')",
+            "ai.copilot" => @"HKLM + HKCU\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot\TurnOffWindowsCopilot  +  HKCU\...\Explorer\Advanced\ShowCopilotButton  +  HKCU\...\Shell\BrandedKey\AppAumid  +  HKCU\...\BackgroundAccessApplications\Microsoft.Copilot_8wekyb3d8bbwe\DisabledByUser",
+            "ai.recall" => @"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI\{AllowRecallEnablement, DisableAIDataAnalysis, TurnOffSavingSnapshots}",
+            "ai.clicktodo" => @"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI\DisableClickToDo  +  HKCU\Software\Microsoft\Windows\Shell\ClickToDo\DisableClickToDo",
+            "ai.edge" => @"HKLM\SOFTWARE\Policies\Microsoft\Edge\{HubsSidebarEnabled, CopilotPageContext, GenAILocalFoundationalModelSettings, ComposeInlineEnabled, AllowBrowsingWithCopilot}",
+            "ai.notepadpaint" => @"HKCU\Software\Microsoft\Notepad\RewriteEnabled  +  HKCU\...\Paint\{DisableCocreator, DisableImageCreator, DisableGenerativeErase}  +  HKCU\...\Applets\Paint\View\IsSignedUpForTargetingService  +  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint\DisableImageCreator",
+            "ai.settingssearch" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\Search\BingSearchEnabled (authoritative)  +  HKCU\...\SearchSettings\IsDynamicSearchBoxEnabled  +  HKCU\SOFTWARE\Policies\Microsoft\Windows\Explorer\DisableSearchBoxSuggestions (best-effort)",
+            "ai.actions" => @"HKLM\SYSTEM\ControlSet001\Control\FeatureManagement\Overrides\8\{1853569164, 4098520719}\EnabledState (DWORD; 1 = force-disabled, 2 = force-enabled, absent = server default)",
+            "ai.inputinsights" => @"HKCU\Software\Microsoft\InputPersonalization\RestrictImplicitTextCollection  +  HKCU\Software\Microsoft\input\Settings\InsightsEnabled",
+            "ai.office" => @"HKCU\Software\Microsoft\Office\16.0\{Word\Options\EnableCopilot, Excel\Options\EnableCopilot, OneNote\Options\Copilot\CopilotEnabled}  +  HKLM\SOFTWARE\Policies\Microsoft\office\16.0\common\ai\training\general\disabletraining",
+            "privacy.advertisingid" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo\Enabled (DWORD)",
+            "privacy.tailoredexp" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\Privacy\TailoredExperiencesWithDiagnosticDataEnabled (DWORD)",
+            "privacy.cdp" => @"HKLM\SOFTWARE\Policies\Microsoft\Windows\System\EnableCdp (DWORD; absent = Windows default ON)",
+            "privacy.activityhistory" => @"HKLM\SOFTWARE\Policies\Microsoft\Windows\System\{EnableActivityFeed, PublishUserActivities, UploadUserActivities} (DWORD)",
+            "privacy.speech" => @"HKCU\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy\HasAccepted (DWORD; 0 = offline recognition only)",
+            "privacy.inking" => @"HKCU\Software\Microsoft\Personalization\Settings\AcceptedPrivacyPolicy  +  HKCU\Software\Microsoft\InputPersonalization\RestrictImplicitInkCollection  +  HKCU\...\InputPersonalization\TrainedDataStore\HarvestContacts (DWORD)",
+            "debloat.suggestedcontent" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\{SilentInstalledAppsEnabled, OemPreInstalledAppsEnabled, PreInstalledAppsEnabled, SubscribedContent-338388/338389/338393/353694/353696Enabled, SoftLandingEnabled} (DWORD; 0 = off)",
+            "debloat.spotlight" => @"HKCU\...\ContentDeliveryManager\{RotatingLockScreenOverlayEnabled, SubscribedContent-338387Enabled} (DWORD; 0 = off)",
+            "debloat.finishsetup" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement\ScoobeSystemSettingEnabled  +  HKCU\...\ContentDeliveryManager\SubscribedContent-310093Enabled (DWORD; 0 = off)",
+            "debloat.startrecommend" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\{Start_IrisRecommendations, Start_TrackDocs} (DWORD; 0 = off)",
+            "debloat.explorerads" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\ShowSyncProviderNotifications (DWORD; 0 = off)",
+            "debloat.feedback" => @"HKCU\Software\Microsoft\Siuf\Rules\NumberOfSIUFInPeriod (DWORD; 0 = never ask) + removal of PeriodInNanoSeconds",
+            "debloat.widgets" => @"HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests (DWORD; 0 = disabled)  +  HKCU\...\Explorer\Advanced\TaskbarDa (DWORD; taskbar button)",
+            "debloat.edge" => @"HKLM\SOFTWARE\Policies\Microsoft\Edge\{StartupBoostEnabled, BackgroundModeEnabled} (DWORD; 0 = disabled; survives Edge updates)",
+            "powerthrottling" => @"HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling\PowerThrottlingOff (DWORD; absent = Windows default)",
+            "faststartup" => @"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power\HiberbootEnabled (DWORD; reboot required)",
+            "visualfx" => @"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects\VisualFXSetting (DWORD; 2=best perf) + HKCU\Control Panel\Desktop\UserPreferencesMask (REG_BINARY)",
+            "network.nagle" => @"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{GUID}\{TcpAckFrequency, TCPNoDelay} (DWORD; per active adapter)",
+            "network.nicpower" => @"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-...}\<NNNN>\PnPCapabilities (DWORD; 0x18 bits; per active adapter; reboot required)",
+            _ => "(unknown)",
+        };
+    }
+
+    /// <summary>
+    /// A copy-pasteable PowerShell command that reproduces what the app does to
+    /// apply this setting. Surfaced in <c>changes.log</c> so a user reading the
+    /// log can manually re-apply, automate via a script, or build a rollback by
+    /// reading the Before value and flipping the apply command.
+    ///
+    /// <para>For settings that take a parameter (service start type, refresh rate, etc.)
+    /// the command embeds the <paramref name="rawDesired"/> value the app actually
+    /// wrote. Pass an empty string for settings where the value is binary/toggle.</para>
+    /// </summary>
+    public static string ApplyCommandFor(string settingId, string rawDesired = "")
+    {
+        if (settingId.StartsWith("service:"))
+        {
+            var name = settingId["service:".Length..];
+            var def = ServiceCatalog.All.FirstOrDefault(d =>
+                d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (def?.PolicyOverride is { } po)
+            {
+                if (rawDesired == "(deleted)")
+                    return $"Remove-ItemProperty -Path 'HKLM:\\{po.PolicyKey}' -Name {po.PolicyValue} -Force";
+                return $"New-Item -Path 'HKLM:\\{po.PolicyKey}' -Force | Out-Null; " +
+                       $"Set-ItemProperty -Path 'HKLM:\\{po.PolicyKey}' -Name {po.PolicyValue} -Value {(string.IsNullOrEmpty(rawDesired) ? po.DisabledValue.ToString() : rawDesired)} -Type DWord";
+            }
+            // sc.exe maps start= words back from registry Start= dword.
+            string startWord = rawDesired switch
+            {
+                "0" => "boot",
+                "1" => "system",
+                "2" => "auto",
+                "3" => "demand",
+                "4" => "disabled",
+                _ => "demand",
+            };
+            return $"sc.exe stop \"{name}\"; sc.exe config \"{name}\" start= {startWord}";
+        }
+        if (settingId.StartsWith("ai.app:"))
+        {
+            var pkg = settingId["ai.app:".Length..];
+            return $"Get-AppxPackage -Name '{pkg}' | Remove-AppxPackage";
+        }
+        if (settingId.StartsWith("task:"))
+        {
+            var path = settingId["task:".Length..];
+            return $"schtasks /Change /TN \"{path}\" /Disable";
+        }
+        if (settingId.StartsWith("hdr:"))
+            return "(no direct PowerShell equivalent; uses DisplayConfigSetDeviceInfo via the CCD API)";
+        if (settingId.StartsWith("refresh:"))
+            return "(no direct PowerShell equivalent; uses ChangeDisplaySettingsEx -- consider DisplaySettings.dll on a custom build)";
+        if (settingId.StartsWith("resolution:"))
+            return "(no direct PowerShell equivalent; uses ChangeDisplaySettingsEx)";
+        if (settingId.StartsWith("drr:"))
+            return "(no PowerShell equivalent; uses SetDisplayConfig with the BOOST_REFRESH_RATE path flag)";
+
+        return settingId switch
+        {
+            "hags" => $@"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -Value {OrDefault(rawDesired, "2")} -Type DWord",
+            "memintegrity" => $@"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name Enabled -Value {OrDefault(rawDesired, "1")} -Type DWord",
+            "vbs" => rawDesired.Contains("EnableVirtualizationBasedSecurity=1")
+                ? @"# Restore VBS to Windows defaults (removes only the explicit-disable zeros; reboot required):" + "\n" +
+                  @"$dg='HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'; Set-ItemProperty $dg -Name EnableVirtualizationBasedSecurity -Value 1 -Type DWord; " +
+                  @"foreach($n in 'RequirePlatformSecurityFeatures','Mandatory','HypervisorEnforcedCodeIntegrity'){ Remove-ItemProperty $dg -Name $n -EA SilentlyContinue }; " +
+                  @"$k=""$dg\Scenarios\HypervisorEnforcedCodeIntegrity""; New-Item $k -Force | Out-Null; Set-ItemProperty $k -Name Enabled -Value 1 -Type DWord; Set-ItemProperty $k -Name WasEnabledBy -Value 2 -Type DWord; " +
+                  @"foreach($s in 'CredentialGuard','SystemGuard','KernelShadowStacks','WindowsHello'){ Remove-ItemProperty ""$dg\Scenarios\$s"" -Name Enabled -EA SilentlyContinue }; " +
+                  @"Remove-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name LsaCfgFlags -EA SilentlyContinue; " +
+                  @"$p='HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeviceGuard'; foreach($n in 'EnableVirtualizationBasedSecurity','LsaCfgFlags','HypervisorEnforcedCodeIntegrity'){ Remove-ItemProperty $p -Name $n -EA SilentlyContinue }"
+                : @"# Disable the full VBS stack (explicit zeros survive feature updates; reboot required):" + "\n" +
+                  @"$dg='HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'; foreach($n in 'EnableVirtualizationBasedSecurity','RequirePlatformSecurityFeatures','Mandatory','HypervisorEnforcedCodeIntegrity'){ Set-ItemProperty $dg -Name $n -Value 0 -Type DWord }; " +
+                  @"foreach($s in 'HypervisorEnforcedCodeIntegrity','CredentialGuard','SystemGuard','KernelShadowStacks','WindowsHello'){ $k=""$dg\Scenarios\$s""; New-Item $k -Force | Out-Null; Set-ItemProperty $k -Name Enabled -Value 0 -Type DWord; foreach($m in 'WasEnabledBy','EnabledBootId','ChangedInBootCycle'){ Remove-ItemProperty $k -Name $m -EA SilentlyContinue } }; " +
+                  @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name LsaCfgFlags -Value 0 -Type DWord; " +
+                  @"$p='HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeviceGuard'; New-Item $p -Force | Out-Null; foreach($n in 'EnableVirtualizationBasedSecurity','LsaCfgFlags','HypervisorEnforcedCodeIntegrity'){ Set-ItemProperty $p -Name $n -Value 0 -Type DWord }",
+            "gamemode" => $@"Set-ItemProperty 'HKCU:\Software\Microsoft\GameBar' -Name AutoGameModeEnabled -Value {OrDefault(rawDesired, "1")} -Type DWord",
+            "gamedvr" => @"Set-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_Enabled -Value 0 -Type DWord; Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name AppCaptureEnabled -Value 0 -Type DWord; $p='HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR'; New-Item $p -Force | Out-Null; Set-ItemProperty $p -Name AllowGameDVR -Value 0 -Type DWord   # reverse: set HKCU values to 1 and Remove-ItemProperty $p -Name AllowGameDVR",
+            "mouseaccel" => @"# Enhance pointer precision OFF (per-user). Use SystemParametersInfo SPI_SETMOUSE in a small EXE; PowerShell can't call it cleanly.",
+            "fso" => @"Set-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_FSEBehaviorMode -Value 2 -Type DWord",
+            "vrr" => $@"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name VRROptimizeEnable -Value {OrDefault(rawDesired, "1")} -Type DWord",
+            "sysresponse" => $@"Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name SystemResponsiveness -Value {OrDefault(rawDesired, "10")} -Type DWord",
+            "netthrottle" => $@"Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name NetworkThrottlingIndex -Value {OrDefault(rawDesired, "4294967295")} -Type DWord",
+            "usbsuspend" => $@"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\USB' -Name DisableSelectiveSuspend -Value {OrDefault(rawDesired, "1")} -Type DWord",
+            "gamestask" => @"# Apply the Games multimedia task profile (Priority/Scheduling Category/SFIO Priority). The app writes 4 DWORDs under HKLM\...\Tasks\Games -- see SettingDocs.MechanismFor for the path.",
+            "powerplan" => $"powercfg /setactive {OrDefault(rawDesired, "(plan-guid)")}",
+            // Template: the actual GUIDs/values are runtime-resolved and shown in
+            // changes.log / the Apply Results window. The exact-overrides docs
+            // obligation is met by SettingDocsCatalog and docs/CPU-AWARE-POWER-PLANS.md.
+            "cpuplan" => "powercfg -duplicatescheme SCHEME_BALANCED  # -> <new-guid>; " +
+                         "powercfg -setacvalueindex <new-guid> SUB_PROCESSOR <setting-guid> <value>  (repeat per override; actual GUIDs/values in changes.log); " +
+                         "powercfg -setactive <new-guid>",
+            "ai.copilot" => @"# Disable Windows Copilot:" + "\n" +
+                           @"Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot' -Name TurnOffWindowsCopilot -Value 1 -Type DWord; " +
+                           @"Set-ItemProperty 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot' -Name TurnOffWindowsCopilot -Value 1 -Type DWord; " +
+                           @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name ShowCopilotButton -Value 0 -Type DWord",
+            "ai.recall" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'; New-Item $k -Force | Out-Null; " +
+                          @"Set-ItemProperty $k -Name AllowRecallEnablement -Value 0 -Type DWord; " +
+                          @"Set-ItemProperty $k -Name DisableAIDataAnalysis -Value 1 -Type DWord",
+            "ai.clicktodo" => @"Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI' -Name DisableClickToDo -Value 1 -Type DWord; " +
+                              @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\ClickToDo' -Name DisableClickToDo -Value 1 -Type DWord",
+            "ai.edge" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Edge'; New-Item $k -Force | Out-Null; " +
+                        @"Set-ItemProperty $k -Name HubsSidebarEnabled -Value 0 -Type DWord; " +
+                        @"Set-ItemProperty $k -Name CopilotPageContext -Value 0 -Type DWord; " +
+                        @"Set-ItemProperty $k -Name GenAILocalFoundationalModelSettings -Value 1 -Type DWord",
+            "ai.notepadpaint" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Notepad' -Name RewriteEnabled -Value 0 -Type DWord; " +
+                                @"$pt='HKCU:\Software\Microsoft\Windows\CurrentVersion\Paint'; New-Item $pt -Force | Out-Null; " +
+                                @"Set-ItemProperty $pt -Name DisableCocreator -Value 1 -Type DWord; " +
+                                @"Set-ItemProperty $pt -Name DisableImageCreator -Value 1 -Type DWord; " +
+                                @"Set-ItemProperty $pt -Name DisableGenerativeErase -Value 1 -Type DWord; " +
+                                @"$pv='HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Paint\View'; New-Item $pv -Force | Out-Null; " +
+                                @"Set-ItemProperty $pv -Name IsSignedUpForTargetingService -Value 0 -Type DWord; " +
+                                @"$hk='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint'; New-Item $hk -Force | Out-Null; " +
+                                @"Set-ItemProperty $hk -Name DisableImageCreator -Value 1 -Type DWord",
+            "ai.settingssearch" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' -Name BingSearchEnabled -Value 0 -Type DWord; " +
+                                  @"$ss='HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings'; New-Item $ss -Force | Out-Null; " +
+                                  @"Set-ItemProperty $ss -Name IsDynamicSearchBoxEnabled -Value 0 -Type DWord; " +
+                                  @"$pe='HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'; New-Item $pe -Force | Out-Null; " +
+                                  @"Set-ItemProperty $pe -Name DisableSearchBoxSuggestions -Value 1 -Type DWord",
+            "ai.actions" => @"$r='HKLM:\SYSTEM\ControlSet001\Control\FeatureManagement\Overrides\8'; " +
+                           @"foreach($id in 1853569164, 4098520719) { New-Item -Path ""$r\$id"" -Force | Out-Null; " +
+                           @"Set-ItemProperty -Path ""$r\$id"" -Name EnabledState -Value 1 -Type DWord }",
+            "ai.inputinsights" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitTextCollection -Value 1 -Type DWord; " +
+                                 @"Set-ItemProperty 'HKCU:\Software\Microsoft\input\Settings' -Name InsightsEnabled -Value 0 -Type DWord",
+            "ai.office" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Word\Options' -Name EnableCopilot -Value 0 -Type DWord; " +
+                          @"Set-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Excel\Options' -Name EnableCopilot -Value 0 -Type DWord; " +
+                          @"$on='HKCU:\Software\Microsoft\Office\16.0\OneNote\Options\Copilot'; New-Item $on -Force | Out-Null; " +
+                          @"Set-ItemProperty $on -Name CopilotEnabled -Value 0 -Type DWord; " +
+                          @"$tr='HKLM:\SOFTWARE\Policies\Microsoft\office\16.0\common\ai\training\general'; New-Item $tr -Force | Out-Null; " +
+                          @"Set-ItemProperty $tr -Name disabletraining -Value 1 -Type DWord",
+            "privacy.advertisingid" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name Enabled -Value 0 -Type DWord",
+            "privacy.tailoredexp" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name TailoredExperiencesWithDiagnosticDataEnabled -Value 0 -Type DWord",
+            "privacy.cdp" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; Set-ItemProperty $k -Name EnableCdp -Value 0 -Type DWord   # reverse: Remove-ItemProperty $k -Name EnableCdp",
+            "privacy.activityhistory" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; foreach($n in 'EnableActivityFeed','PublishUserActivities','UploadUserActivities'){ Set-ItemProperty $k -Name $n -Value 0 -Type DWord }   # reverse: Remove-ItemProperty for each",
+            "privacy.speech" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy' -Name HasAccepted -Value 0 -Type DWord   # reverse: set to 1",
+            "privacy.inking" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Personalization\Settings' -Name AcceptedPrivacyPolicy -Value 0 -Type DWord; " +
+                               @"Set-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitInkCollection -Value 1 -Type DWord; " +
+                               @"$t='HKCU:\Software\Microsoft\InputPersonalization\TrainedDataStore'; New-Item $t -Force | Out-Null; Set-ItemProperty $t -Name HarvestContacts -Value 0 -Type DWord",
+            "debloat.suggestedcontent" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'; " +
+                               @"foreach($n in 'SilentInstalledAppsEnabled','OemPreInstalledAppsEnabled','PreInstalledAppsEnabled','SubscribedContent-338388Enabled','SubscribedContent-338389Enabled','SubscribedContent-338393Enabled','SubscribedContent-353694Enabled','SubscribedContent-353696Enabled','SoftLandingEnabled'){ Set-ItemProperty $k -Name $n -Value 0 -Type DWord }   # reverse: Remove-ItemProperty each",
+            "debloat.spotlight" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'; foreach($n in 'RotatingLockScreenOverlayEnabled','SubscribedContent-338387Enabled'){ Set-ItemProperty $k -Name $n -Value 0 -Type DWord }",
+            "debloat.finishsetup" => @"$e='HKCU:\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement'; New-Item $e -Force | Out-Null; Set-ItemProperty $e -Name ScoobeSystemSettingEnabled -Value 0 -Type DWord; " +
+                               @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name SubscribedContent-310093Enabled -Value 0 -Type DWord",
+            "debloat.startrecommend" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'; foreach($n in 'Start_IrisRecommendations','Start_TrackDocs'){ Set-ItemProperty $k -Name $n -Value 0 -Type DWord }",
+            "debloat.explorerads" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name ShowSyncProviderNotifications -Value 0 -Type DWord",
+            "debloat.feedback" => @"$k='HKCU:\Software\Microsoft\Siuf\Rules'; New-Item $k -Force | Out-Null; Set-ItemProperty $k -Name NumberOfSIUFInPeriod -Value 0 -Type DWord; Remove-ItemProperty $k -Name PeriodInNanoSeconds -EA SilentlyContinue",
+            "debloat.widgets" => @"$p='HKLM:\SOFTWARE\Policies\Microsoft\Dsh'; New-Item $p -Force | Out-Null; Set-ItemProperty $p -Name AllowNewsAndInterests -Value 0 -Type DWord; " +
+                               @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name TaskbarDa -Value 0 -Type DWord   # reverse: Remove-ItemProperty $p -Name AllowNewsAndInterests",
+            "debloat.edge" => @"$p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'; New-Item $p -Force | Out-Null; foreach($n in 'StartupBoostEnabled','BackgroundModeEnabled'){ Set-ItemProperty $p -Name $n -Value 0 -Type DWord }   # reverse: Remove-ItemProperty each",
+            "powerthrottling" => @"$k='HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling'; New-Item $k -Force | Out-Null; Set-ItemProperty $k -Name PowerThrottlingOff -Value 1 -Type DWord   # reverse: Remove-ItemProperty $k -Name PowerThrottlingOff",
+            "faststartup" => @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' -Name HiberbootEnabled -Value 0 -Type DWord   # reboot required; reverse: set to 1",
+            "visualfx" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name VisualFXSetting -Value 2 -Type DWord; Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name UserPreferencesMask -Value ([byte[]](0x90,0x12,0x03,0x80,0x10,0,0,0)) -Type Binary   # reverse: VisualFXSetting=0; sign out to fully apply",
+            "network.nagle" => @"# Per adapter interface key (repeat for each active adapter GUID):" + "\n" +
+                              @"$if='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\<GUID>'; Set-ItemProperty $if -Name TcpAckFrequency -Value 1 -Type DWord; Set-ItemProperty $if -Name TCPNoDelay -Value 1 -Type DWord   # reverse: Remove-ItemProperty both per adapter",
+            "network.nicpower" => @"# Per network-class instance (match NetCfgInstanceId to the adapter GUID), reboot after:" + "\n" +
+                                 @"$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\<NNNN>'; $v=[int](Get-ItemProperty $k -Name PnPCapabilities -EA SilentlyContinue).PnPCapabilities; Set-ItemProperty $k -Name PnPCapabilities -Value ($v -bor 0x18) -Type DWord   # reverse: -band (-bnot 0x18)",
+            _ => "",
+        };
+    }
+
+    private static string OrDefault(string raw, string fallback) =>
+        string.IsNullOrEmpty(raw) ? fallback : raw;
+
+    public static string VerifyCommandFor(string settingId)
+    {
+        if (settingId.StartsWith("ai.app:"))
+        {
+            var pkg = settingId["ai.app:".Length..];
+            return $"Get-AppxPackage -Name '{pkg}'   # empty output = removed";
+        }
+        if (settingId.StartsWith("hdr:") || settingId.StartsWith("refresh:") || settingId.StartsWith("resolution:"))
+            return "Open Settings -> System -> Display, or run: dxdiag";
+        if (settingId.StartsWith("drr:"))
+            return "Settings -> System -> Display -> Advanced display -> 'Choose a refresh rate' (Dynamic = DRR on)";
+        if (settingId.StartsWith("service:"))
+        {
+            var name = settingId["service:".Length..];
+            var def = ServiceCatalog.All.FirstOrDefault(d =>
+                d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (def?.PolicyOverride is { } po)
+                return $"(Get-ItemProperty 'HKLM:\\{po.PolicyKey}' -Name {po.PolicyValue} -EA SilentlyContinue).{po.PolicyValue}";
+            return $"sc qc \"{name}\"   # look for START_TYPE";
+        }
+        if (settingId.StartsWith("task:"))
+        {
+            var path = settingId["task:".Length..];
+            return $"schtasks /Query /TN \"{path}\" /XML   # <Settings><Enabled>false</Enabled> = disabled";
+        }
+        return settingId switch
+        {
+            "hags" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode).HwSchMode",
+            "memintegrity" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name Enabled).Enabled",
+            "vbs" => @"# Run elevated. Configured state (registry):" + "\n" +
+                     @"$dg='HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'; @{EVBS=(Get-ItemProperty $dg -Name EnableVirtualizationBasedSecurity -EA SilentlyContinue).EnableVirtualizationBasedSecurity; RPSF=(Get-ItemProperty $dg -Name RequirePlatformSecurityFeatures -EA SilentlyContinue).RequirePlatformSecurityFeatures; Mandatory=(Get-ItemProperty $dg -Name Mandatory -EA SilentlyContinue).Mandatory; LsaCfg=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name LsaCfgFlags -EA SilentlyContinue).LsaCfgFlags; Policy=(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeviceGuard' -EA SilentlyContinue | Select-Object EnableVirtualizationBasedSecurity,LsaCfgFlags,HypervisorEnforcedCodeIntegrity | Out-String).Trim(); Scenarios=(Get-ChildItem ""$dg\Scenarios"" -EA SilentlyContinue | ForEach-Object { ""$($_.PSChildName)=$((Get-ItemProperty $_.PSPath -Name Enabled -EA SilentlyContinue).Enabled)"" }) -join ', '}" + "\n" +
+                     @"# Runtime truth (0 = off/not enabled, 1 = configured but not running, 2 = running; changes only after a reboot):" + "\n" +
+                     @"(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard).VirtualizationBasedSecurityStatus",
+            "gamemode" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\GameBar' -Name AutoGameModeEnabled).AutoGameModeEnabled",
+            "gamedvr" => @"@{Capture=(Get-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_Enabled -EA SilentlyContinue).GameDVR_Enabled; Policy=(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR' -Name AllowGameDVR -EA SilentlyContinue).AllowGameDVR}",
+            "mouseaccel" => @"(Get-ItemProperty 'HKCU:\Control Panel\Mouse' -Name MouseSpeed).MouseSpeed",
+            "fso" => @"(Get-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_FSEBehaviorMode).GameDVR_FSEBehaviorMode",
+            "vrr" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name VRROptimizeEnable).VRROptimizeEnable",
+            "sysresponse" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name SystemResponsiveness).SystemResponsiveness",
+            "netthrottle" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name NetworkThrottlingIndex).NetworkThrottlingIndex",
+            "usbsuspend" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\USB' -Name DisableSelectiveSuspend).DisableSelectiveSuspend",
+            "gamestask" => @"Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games'",
+            "powerplan" => @"powercfg /getactivescheme",
+            "cpuplan" => @"powercfg /getactivescheme; powercfg /query SCHEME_CURRENT SUB_PROCESSOR",
+            "ai.copilot" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot' -Name TurnOffWindowsCopilot -EA SilentlyContinue).TurnOffWindowsCopilot",
+            "ai.recall" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'; @{Allow=(Get-ItemProperty $k -Name AllowRecallEnablement -EA SilentlyContinue).AllowRecallEnablement; Disable=(Get-ItemProperty $k -Name DisableAIDataAnalysis -EA SilentlyContinue).DisableAIDataAnalysis; Snap=(Get-ItemProperty $k -Name TurnOffSavingSnapshots -EA SilentlyContinue).TurnOffSavingSnapshots}",
+            "ai.clicktodo" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI' -Name DisableClickToDo -EA SilentlyContinue).DisableClickToDo",
+            "ai.edge" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Edge'; @{Hubs=(Get-ItemProperty $k -Name HubsSidebarEnabled -EA SilentlyContinue).HubsSidebarEnabled; Ctx=(Get-ItemProperty $k -Name CopilotPageContext -EA SilentlyContinue).CopilotPageContext; Gen=(Get-ItemProperty $k -Name GenAILocalFoundationalModelSettings -EA SilentlyContinue).GenAILocalFoundationalModelSettings; Compose=(Get-ItemProperty $k -Name ComposeInlineEnabled -EA SilentlyContinue).ComposeInlineEnabled; Browse=(Get-ItemProperty $k -Name AllowBrowsingWithCopilot -EA SilentlyContinue).AllowBrowsingWithCopilot}",
+            "ai.notepadpaint" => @"$np='HKCU:\Software\Microsoft\Notepad'; $pt='HKCU:\Software\Microsoft\Windows\CurrentVersion\Paint'; @{Rewrite=(Get-ItemProperty $np -Name RewriteEnabled -EA SilentlyContinue).RewriteEnabled; Cocreator=(Get-ItemProperty $pt -Name DisableCocreator -EA SilentlyContinue).DisableCocreator}",
+            "ai.settingssearch" => @"@{Bing=(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' -Name BingSearchEnabled -EA SilentlyContinue).BingSearchEnabled; Dynamic=(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings' -Name IsDynamicSearchBoxEnabled -EA SilentlyContinue).IsDynamicSearchBoxEnabled; Disable=(Get-ItemProperty 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' -Name DisableSearchBoxSuggestions -EA SilentlyContinue).DisableSearchBoxSuggestions}",
+            "ai.actions" => @"$r='HKLM:\SYSTEM\ControlSet001\Control\FeatureManagement\Overrides\8'; @{A=(Get-ItemProperty $r\1853569164 -Name EnabledState -EA SilentlyContinue).EnabledState; B=(Get-ItemProperty $r\4098520719 -Name EnabledState -EA SilentlyContinue).EnabledState}",
+            "ai.inputinsights" => @"@{Restrict=(Get-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitTextCollection -EA SilentlyContinue).RestrictImplicitTextCollection; Insights=(Get-ItemProperty 'HKCU:\Software\Microsoft\input\Settings' -Name InsightsEnabled -EA SilentlyContinue).InsightsEnabled}",
+            "ai.office" => @"@{Word=(Get-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Word\Options' -Name EnableCopilot -EA SilentlyContinue).EnableCopilot; Excel=(Get-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Excel\Options' -Name EnableCopilot -EA SilentlyContinue).EnableCopilot; OneNote=(Get-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\OneNote\Options\Copilot' -Name CopilotEnabled -EA SilentlyContinue).CopilotEnabled; Training=(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\office\16.0\common\ai\training\general' -Name disabletraining -EA SilentlyContinue).disabletraining}",
+            "privacy.advertisingid" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name Enabled -EA SilentlyContinue).Enabled",
+            "privacy.tailoredexp" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name TailoredExperiencesWithDiagnosticDataEnabled -EA SilentlyContinue).TailoredExperiencesWithDiagnosticDataEnabled",
+            "privacy.cdp" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name EnableCdp -EA SilentlyContinue).EnableCdp",
+            "privacy.activityhistory" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; @{Feed=(Get-ItemProperty $k -Name EnableActivityFeed -EA SilentlyContinue).EnableActivityFeed; Publish=(Get-ItemProperty $k -Name PublishUserActivities -EA SilentlyContinue).PublishUserActivities; Upload=(Get-ItemProperty $k -Name UploadUserActivities -EA SilentlyContinue).UploadUserActivities}",
+            "privacy.speech" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy' -Name HasAccepted -EA SilentlyContinue).HasAccepted",
+            "privacy.inking" => @"@{Accepted=(Get-ItemProperty 'HKCU:\Software\Microsoft\Personalization\Settings' -Name AcceptedPrivacyPolicy -EA SilentlyContinue).AcceptedPrivacyPolicy; Ink=(Get-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitInkCollection -EA SilentlyContinue).RestrictImplicitInkCollection}",
+            "debloat.suggestedcontent" => @"Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' | Select-Object SilentInstalledAppsEnabled,OemPreInstalledAppsEnabled,PreInstalledAppsEnabled,SoftLandingEnabled",
+            "debloat.spotlight" => @"Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' | Select-Object RotatingLockScreenOverlayEnabled,'SubscribedContent-338387Enabled'",
+            "debloat.finishsetup" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement' -Name ScoobeSystemSettingEnabled -EA SilentlyContinue).ScoobeSystemSettingEnabled",
+            "debloat.startrecommend" => @"Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' | Select-Object Start_IrisRecommendations,Start_TrackDocs",
+            "debloat.explorerads" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name ShowSyncProviderNotifications -EA SilentlyContinue).ShowSyncProviderNotifications",
+            "debloat.feedback" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Siuf\Rules' -Name NumberOfSIUFInPeriod -EA SilentlyContinue).NumberOfSIUFInPeriod",
+            "debloat.widgets" => @"(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name AllowNewsAndInterests -EA SilentlyContinue).AllowNewsAndInterests",
+            "debloat.edge" => @"Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Edge' | Select-Object StartupBoostEnabled,BackgroundModeEnabled",
+            "powerthrottling" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling' -Name PowerThrottlingOff -EA SilentlyContinue).PowerThrottlingOff",
+            "faststartup" => @"(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' -Name HiberbootEnabled -EA SilentlyContinue).HiberbootEnabled",
+            "visualfx" => @"(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name VisualFXSetting -EA SilentlyContinue).VisualFXSetting",
+            "network.nagle" => @"Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' | ForEach-Object { [pscustomobject]@{ If=$_.PSChildName; Ack=(Get-ItemProperty $_.PSPath -Name TcpAckFrequency -EA SilentlyContinue).TcpAckFrequency; NoDelay=(Get-ItemProperty $_.PSPath -Name TCPNoDelay -EA SilentlyContinue).TCPNoDelay } }",
+            "network.nicpower" => @"Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}' | ForEach-Object { $p=(Get-ItemProperty $_.PSPath -Name PnPCapabilities -EA SilentlyContinue).PnPCapabilities; if ($null -ne $p) { [pscustomobject]@{ Key=$_.PSChildName; PnPCapabilities=$p; PowerSaveDisabled=(($p -band 0x18) -eq 0x18) } } }",
+            _ => "",
+        };
+    }
+
+    /// <summary>
+    /// A copy-pasteable PowerShell command that <b>undoes</b> the gaming change --
+    /// restoring the Windows default (or flipping the setting the other way). Pairs
+    /// with <see cref="ApplyCommandFor"/> so the in-app "Learn more" expander and the
+    /// generated reference can show a clean command for <i>both</i> directions
+    /// (enable and disable). Returns an empty string when there is no clean
+    /// command-line reversal (display settings, mouse acceleration, the Games task
+    /// profile) -- callers fall back to the prose <c>ReversibleVia</c> for those.
+    /// </summary>
+    public static string ReverseCommandFor(string settingId)
+    {
+        if (settingId is null) return "";
+        if (settingId.StartsWith("service:"))
+        {
+            var name = settingId["service:".Length..];
+            var def = ServiceCatalog.All.FirstOrDefault(d =>
+                d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (def?.PolicyOverride is { } po)
+                return $"Remove-ItemProperty -Path 'HKLM:\\{po.PolicyKey}' -Name {po.PolicyValue} -Force   # restore the Windows default";
+            // Re-enable the service. 'auto' is the safe restore for most; the exact
+            // Windows default per service is in this row's "Reversible via" line.
+            return $"sc.exe config \"{name}\" start= auto; sc.exe start \"{name}\"   # restore the Windows default (see Reversible via for this service's exact default start type)";
+        }
+        if (settingId.StartsWith("ai.app:"))
+            return "(no command-line restore -- reinstall from the Microsoft Store, or wait for Windows Update to re-provision)";
+        if (settingId.StartsWith("task:"))
+        {
+            var path = settingId["task:".Length..];
+            return $"schtasks /Change /TN \"{path}\" /Enable   # re-enable the scheduled task";
+        }
+        if (settingId.StartsWith("hdr:") || settingId.StartsWith("refresh:")
+            || settingId.StartsWith("resolution:") || settingId.StartsWith("drr:"))
+            return "(no PowerShell equivalent -- flip it back in Settings > System > Display)";
+
+        return settingId switch
+        {
+            "hags" => @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -Value 1 -Type DWord   # turn HAGS off; reboot",
+            "memintegrity" => @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' -Name Enabled -Value 1 -Type DWord   # re-enable Memory Integrity; reboot",
+            "vbs" => ApplyCommandFor("vbs", "EnableVirtualizationBasedSecurity=1"),
+            "gamemode" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\GameBar' -Name AutoGameModeEnabled -Value 0 -Type DWord   # turn Game Mode off",
+            "gamedvr" => @"Set-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_Enabled -Value 1 -Type DWord; Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name AppCaptureEnabled -Value 1 -Type DWord; Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR' -Name AllowGameDVR -EA SilentlyContinue   # re-enable Game DVR capture",
+            "fso" => @"Remove-ItemProperty 'HKCU:\System\GameConfigStore' -Name GameDVR_FSEBehaviorMode -EA SilentlyContinue   # restore fullscreen optimizations (Windows default)",
+            "vrr" => @"Remove-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name VRROptimizeEnable -EA SilentlyContinue   # restore the Windows default",
+            "sysresponse" => @"Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name SystemResponsiveness -Value 20 -Type DWord   # restore the Windows default; reboot",
+            "netthrottle" => @"Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name NetworkThrottlingIndex -Value 10 -Type DWord   # restore the Windows default",
+            "usbsuspend" => @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\USB' -Name DisableSelectiveSuspend -Value 0 -Type DWord   # restore Windows-managed USB suspend; reboot",
+            "powerplan" => @"powercfg /setactive SCHEME_BALANCED   # restore the Balanced plan",
+            "cpuplan" => @"powercfg /setactive SCHEME_BALANCED   # switch back to Balanced (the custom plan can be deleted from the legacy Power control panel)",
+            "powerthrottling" => @"Remove-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling' -Name PowerThrottlingOff -EA SilentlyContinue   # restore the Windows default",
+            "faststartup" => @"Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' -Name HiberbootEnabled -Value 1 -Type DWord   # re-enable Fast Startup",
+            "visualfx" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name VisualFXSetting -Value 0 -Type DWord   # 'Let Windows choose'; sign out to fully apply",
+            "ai.copilot" => @"Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot' -Name TurnOffWindowsCopilot -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot' -Name TurnOffWindowsCopilot -EA SilentlyContinue   # re-enable Copilot",
+            "ai.recall" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'; foreach($n in 'AllowRecallEnablement','DisableAIDataAnalysis','TurnOffSavingSnapshots'){ Remove-ItemProperty $k -Name $n -EA SilentlyContinue }   # re-allow Recall",
+            "ai.clicktodo" => @"Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI' -Name DisableClickToDo -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\ClickToDo' -Name DisableClickToDo -EA SilentlyContinue   # re-enable Click-to-Do",
+            "ai.edge" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Edge'; foreach($n in 'HubsSidebarEnabled','CopilotPageContext','GenAILocalFoundationalModelSettings','ComposeInlineEnabled','AllowBrowsingWithCopilot'){ Remove-ItemProperty $k -Name $n -EA SilentlyContinue }   # re-enable Edge Copilot",
+            "ai.notepadpaint" => @"Remove-ItemProperty 'HKCU:\Software\Microsoft\Notepad' -Name RewriteEnabled -EA SilentlyContinue; $pt='HKCU:\Software\Microsoft\Windows\CurrentVersion\Paint'; foreach($n in 'DisableCocreator','DisableImageCreator','DisableGenerativeErase'){ Remove-ItemProperty $pt -Name $n -EA SilentlyContinue }; Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Applets\Paint\View' -Name IsSignedUpForTargetingService -EA SilentlyContinue; Remove-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint' -Name DisableImageCreator -EA SilentlyContinue   # restore Notepad/Paint AI",
+            "ai.settingssearch" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' -Name BingSearchEnabled -Value 1 -Type DWord; Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings' -Name IsDynamicSearchBoxEnabled -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' -Name DisableSearchBoxSuggestions -EA SilentlyContinue   # re-enable search-box web/AI suggestions",
+            "ai.actions" => @"$r='HKLM:\SYSTEM\ControlSet001\Control\FeatureManagement\Overrides\8'; foreach($id in 1853569164, 4098520719){ Remove-ItemProperty -Path ""$r\$id"" -Name EnabledState -EA SilentlyContinue }   # restore Windows AI Actions",
+            "ai.inputinsights" => @"Remove-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitTextCollection -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Microsoft\input\Settings' -Name InsightsEnabled -EA SilentlyContinue   # re-enable typing insights",
+            "ai.office" => @"Remove-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Word\Options' -Name EnableCopilot -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\Excel\Options' -Name EnableCopilot -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Microsoft\Office\16.0\OneNote\Options\Copilot' -Name CopilotEnabled -EA SilentlyContinue; Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\office\16.0\common\ai\training\general' -Name disabletraining -EA SilentlyContinue   # restore Office Copilot",
+            "mouseaccel" => @"# Re-check 'Enhance pointer precision' in Settings > Bluetooth & devices > Mouse > Additional mouse settings > Pointer Options (the OS uses SystemParametersInfo SPI_SETMOUSE, which PowerShell can't call cleanly).",
+            "gamestask" => @"# Restore the Games MMCSS profile defaults under HKLM\...\Multimedia\SystemProfile\Tasks\Games (Priority=2, 'Scheduling Category'='High', 'SFIO Priority'='High' are Windows' own defaults; GamerTune restores them when you pick Default).",
+            "privacy.advertisingid" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name Enabled -Value 1 -Type DWord   # re-enable the advertising ID",
+            "privacy.tailoredexp" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy' -Name TailoredExperiencesWithDiagnosticDataEnabled -Value 1 -Type DWord   # re-enable tailored experiences",
+            "privacy.cdp" => @"Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name EnableCdp -EA SilentlyContinue   # restore the Windows default (CDP on)",
+            "privacy.activityhistory" => @"$k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; foreach($n in 'EnableActivityFeed','PublishUserActivities','UploadUserActivities'){ Remove-ItemProperty $k -Name $n -EA SilentlyContinue }   # restore the Windows default",
+            "privacy.speech" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy' -Name HasAccepted -Value 1 -Type DWord   # re-enable cloud speech recognition",
+            "privacy.inking" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Personalization\Settings' -Name AcceptedPrivacyPolicy -Value 1 -Type DWord; Remove-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization' -Name RestrictImplicitInkCollection -EA SilentlyContinue; Remove-ItemProperty 'HKCU:\Software\Microsoft\InputPersonalization\TrainedDataStore' -Name HarvestContacts -EA SilentlyContinue   # re-enable inking & typing personalization",
+            "debloat.suggestedcontent" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'; foreach($n in 'SilentInstalledAppsEnabled','OemPreInstalledAppsEnabled','PreInstalledAppsEnabled','SubscribedContent-338388Enabled','SubscribedContent-338389Enabled','SubscribedContent-338393Enabled','SubscribedContent-353694Enabled','SubscribedContent-353696Enabled','SoftLandingEnabled'){ Remove-ItemProperty $k -Name $n -EA SilentlyContinue }   # restore suggested content",
+            "debloat.spotlight" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'; foreach($n in 'RotatingLockScreenOverlayEnabled','SubscribedContent-338387Enabled'){ Remove-ItemProperty $k -Name $n -EA SilentlyContinue }   # restore lock-screen tips",
+            "debloat.finishsetup" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement' -Name ScoobeSystemSettingEnabled -Value 1 -Type DWord; Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name SubscribedContent-310093Enabled -EA SilentlyContinue   # restore the finish-setup prompt",
+            "debloat.startrecommend" => @"$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'; foreach($n in 'Start_IrisRecommendations','Start_TrackDocs'){ Set-ItemProperty $k -Name $n -Value 1 -Type DWord }   # restore Start recommendations & recent files",
+            "debloat.explorerads" => @"Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name ShowSyncProviderNotifications -Value 1 -Type DWord   # restore Explorer sync banners",
+            "debloat.feedback" => @"Remove-ItemProperty 'HKCU:\Software\Microsoft\Siuf\Rules' -Name NumberOfSIUFInPeriod -EA SilentlyContinue   # restore Windows' default feedback cadence",
+            "debloat.widgets" => @"Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name AllowNewsAndInterests -EA SilentlyContinue; Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name TaskbarDa -Value 1 -Type DWord   # restore Widgets",
+            "debloat.edge" => @"$p='HKLM:\SOFTWARE\Policies\Microsoft\Edge'; foreach($n in 'StartupBoostEnabled','BackgroundModeEnabled'){ Remove-ItemProperty $p -Name $n -EA SilentlyContinue }   # restore Edge startup boost & background mode",
+            "network.nagle" => @"# Per active adapter interface key (repeat for each adapter GUID):" + "\n" +
+                              @"Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' | ForEach-Object { Remove-ItemProperty $_.PSPath -Name TcpAckFrequency -EA SilentlyContinue; Remove-ItemProperty $_.PSPath -Name TCPNoDelay -EA SilentlyContinue }   # restore Nagle (the Windows default)",
+            "network.nicpower" => @"# Per network-class instance, then reboot (clears the 0x18 power-save bits):" + "\n" +
+                                 @"$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\<NNNN>'; $v=[int](Get-ItemProperty $k -Name PnPCapabilities -EA SilentlyContinue).PnPCapabilities; Set-ItemProperty $k -Name PnPCapabilities -Value ($v -band (-bnot 0x18)) -Type DWord   # restore Windows-managed NIC power",
+            _ => "",
+        };
+    }
+}

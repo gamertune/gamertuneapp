@@ -1,0 +1,22 @@
+bin/
+obj/
+out/
+publish/
+publish-beta/
+.tmp_*/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+*.iobj
+*.ipdb
+*.pdb
+*.exe.config
+artifacts/
+TestResults/
+
+# Installer outputs
+installer/Output/
+*.iss.user
+

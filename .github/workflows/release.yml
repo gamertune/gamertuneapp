@@ -1,0 +1,221 @@
+name: release
+
+# Releases are cut deliberately, never as a side effect of merging. A push to
+# main used to publish whenever it touched src/** or installer/**, which meant
+# every merged PR consumed a version and shipped an installer. Publishing now
+# requires an explicit act: push a v*.*.* tag, or run the workflow by hand.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0). Leave blank to auto-bump from latest tag.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write       # create release + tag
+      id-token: write       # mint Sigstore OIDC token for provenance signing
+      attestations: write   # attach SLSA build-provenance attestation
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $manual = '${{ github.event.inputs.version }}'
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = $env:GITHUB_REF -replace 'refs/tags/v',''
+            $createTag = $false
+          } elseif (-not [string]::IsNullOrWhiteSpace($manual)) {
+            $v = $manual
+            $createTag = $true
+          } else {
+            # Stable tags only. The 'v*.*.*' glob also matches prerelease tags
+            # like v0.1.65-beta.1, and $parts[2] would then be "65-beta", which
+            # [int] throws on -- failing the release. dev-build.yml has always
+            # filtered these out; release.yml did not.
+            $latest = (git tag --list 'v*.*.*' --sort=-v:refname | Where-Object { $_ -notmatch '-' } | Select-Object -First 1)
+            if ([string]::IsNullOrWhiteSpace($latest)) { $latest = 'v0.0.0' }
+            $parts = ($latest -replace '^v','').Split('.')
+            $patch = [int]$parts[2] + 1
+            $v = "$($parts[0]).$($parts[1]).$patch"
+            $createTag = $true
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "create_tag=$($createTag.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Building version $v (create_tag=$createTag)"
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore GamerTune.sln
+
+      - name: Check for vulnerable NuGet packages
+        shell: pwsh
+        run: |
+          # Lists known-vulnerable transitive deps. Exits with the report
+          # text only — fails the job if anything shows up.
+          $out = dotnet list GamerTune.sln package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Host $out
+          if ($out -match 'has the following vulnerable packages') {
+            throw "Vulnerable NuGet packages detected. Run 'dotnet list package --vulnerable' locally and bump the affected dependency."
+          }
+
+      - name: Publish (self-contained, single-file, win-x64)
+        run: >
+          dotnet publish src/GamerTune/GamerTune.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.ver.outputs.version }}
+          -p:AssemblyVersion=${{ steps.ver.outputs.version }}.0
+          -p:FileVersion=${{ steps.ver.outputs.version }}.0
+          -o publish
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\GamerTune.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          # Produces SHA256SUMS.txt with the same format as `sha256sum -b`,
+          # so users can verify with PowerShell's Get-FileHash or `sha256sum -c`.
+          $installer = Get-Item "installer\Output\GamerTune-Setup-${{ steps.ver.outputs.version }}.exe"
+          $portable  = Get-Item "publish\GamerTune.exe"
+          $lines = @(
+            (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower() + " *" + $installer.Name
+            (Get-FileHash $portable  -Algorithm SHA256).Hash.ToLower() + " *" + $portable.Name
+          )
+          $lines | Set-Content -Path "installer\Output\SHA256SUMS.txt" -Encoding ASCII
+          Write-Host (Get-Content "installer\Output\SHA256SUMS.txt" -Raw)
+
+      - name: List artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse installer\Output, publish | Select-Object FullName, Length
+
+      - name: Build release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          # Pull the section for this version out of CHANGELOG.md so the GitHub
+          # release (and the in-app update prompt that displays this text) shows
+          # curated, plain-English notes. Falls back to the [Unreleased] section
+          # (newest work not yet version-stamped), then to a generic line. This is
+          # the ENTIRE release body — the raw "What's Changed" PR list is off (see
+          # generate_release_notes below).
+          $version = '${{ steps.ver.outputs.version }}'
+          $cl = Get-Content -Raw CHANGELOG.md
+          function Get-Section($text, $header) {
+            $pattern = "(?ms)^##\s*\[" + [regex]::Escape($header) + "\][^\n]*\n(.*?)(?=^##\s*\[|\z)"
+            $m = [regex]::Match($text, $pattern)
+            if ($m.Success) { return $m.Groups[1].Value.Trim() } else { return $null }
+          }
+          $body = Get-Section $cl $version
+          if (-not $body) { $body = Get-Section $cl 'Unreleased' }
+          if (-not $body) { $body = "See the commits in this release for details." }
+          "## What's new in $version`n`n$body`n" | Set-Content -Path release-notes.md -Encoding utf8
+          Write-Host "----- release-notes.md -----"
+          Write-Host (Get-Content release-notes.md -Raw)
+
+      # Optional: scan with VirusTotal and surface the per-engine result URLs
+      # in the run summary. Skips silently unless both the repository variable
+      # `ENABLE_VIRUSTOTAL=true` is set *and* a `VIRUSTOTAL_API_KEY` secret is
+      # configured. Get a free public API key at https://www.virustotal.com/.
+      - name: Scan release artifacts on VirusTotal
+        id: vt
+        if: ${{ vars.ENABLE_VIRUSTOTAL == 'true' }}
+        continue-on-error: true
+        uses: crazy-max/ghaction-virustotal@936d8c5c00afe97d3d9a1af26d017cfdf26800a2 # v5.0.0
+        with:
+          vt_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          files: |
+            installer/Output/GamerTune-Setup-${{ steps.ver.outputs.version }}.exe
+            publish/GamerTune.exe
+
+      - name: Append VirusTotal URLs to release notes (if scan ran)
+        if: ${{ vars.ENABLE_VIRUSTOTAL == 'true' && steps.vt.outputs.analysis != '' }}
+        shell: pwsh
+        run: |
+          $body = "`n`n## VirusTotal scans`n`n"
+          # steps.vt.outputs.analysis is "filename=url,filename=url,..."
+          $entries = "${{ steps.vt.outputs.analysis }}".Split(',')
+          foreach ($e in $entries) {
+            $parts = $e.Split('=', 2)
+            if ($parts.Length -eq 2) {
+              $name = Split-Path $parts[0] -Leaf
+              $body += "- [``$name``]($($parts[1]))`n"
+            }
+          }
+          $body | Out-File -FilePath release-notes.md -Encoding utf8 -Append
+          Write-Host $body
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: GamerTune-Setup-${{ steps.ver.outputs.version }}
+          path: installer/Output/GamerTune-Setup-${{ steps.ver.outputs.version }}.exe
+
+      - name: Upload portable EXE artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: GamerTune-${{ steps.ver.outputs.version }}-portable
+          path: publish/GamerTune.exe
+
+      # Generate SLSA Build Provenance attestations for the release artifacts.
+      # GitHub records these in its public attestation log; Sigstore co-signs
+      # them via OIDC. Anyone can verify a downloaded binary was built from
+      # this exact source commit by this exact workflow with:
+      #   gh attestation verify GamerTune-Setup-x.y.z.exe --owner gamertune
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            installer/Output/GamerTune-Setup-${{ steps.ver.outputs.version }}.exe
+            publish/GamerTune.exe
+            installer/Output/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: GamerTune ${{ steps.ver.outputs.version }}
+          # The curated CHANGELOG section (+ any VirusTotal URLs) is the ENTIRE
+          # body. generate_release_notes is intentionally off: its auto "What's
+          # Changed" list of raw "Merge pull request #NN" titles is exactly the
+          # noise that made the release notes — and the in-app update prompt that
+          # displays this body — look bad.
+          generate_release_notes: false
+          body_path: release-notes.md
+          target_commitish: ${{ github.sha }}
+          files: |
+            installer/Output/GamerTune-Setup-${{ steps.ver.outputs.version }}.exe
+            publish/GamerTune.exe
+            installer/Output/SHA256SUMS.txt
