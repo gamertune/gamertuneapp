@@ -94,6 +94,9 @@ public partial class App : WpfApplication
         }
         ThemeService.Apply(cfg.Theme);
         TempCleanup.Run();
+        // Plans built before the GamerGuardian -> GamerTune rename keep the old
+        // name until rebuilt; give them the current one. No-op once done.
+        CpuPlanBuilder.RenameLegacyPlans();
 
         _notifier = new Notifier();
         var fixedMonitors = new IMonitoredSetting[]
