@@ -3,8 +3,8 @@
 Captures screenshots of the running app for the README and wiki.
 
 Builds Debug, launches with --show-settings, waits for the FluentWindow to
-render, PrintWindow's it once per tab. Walks the TabControl via UI Automation
-to select each tab in turn.
+render, PrintWindow's it once per page. Walks the sidebar via UI Automation
+to select each page in turn.
 
 Run from repo root:
     pwsh ./tools/capture-screenshots.ps1
@@ -32,16 +32,25 @@ public static class WinCap {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT pvAttr, int cbAttribute);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
 
 [WinCap]::SetProcessDPIAware() | Out-Null
 
+# Copies the window's pixels off the screen. PrintWindow returns a blank frame
+# for the software-rendered WPF window, so the window must be visible and in
+# front while this runs. DWMWA_EXTENDED_FRAME_BOUNDS (9) gives the visible
+# bounds without the invisible resize border / drop shadow.
 function Capture-Hwnd([IntPtr]$hwnd, [string]$outPath) {
+    [WinCap]::SetForegroundWindow($hwnd) | Out-Null
+    Start-Sleep -Milliseconds 200
     $rect = New-Object WinCap+RECT
-    if (-not [WinCap]::GetWindowRect($hwnd, [ref]$rect)) {
-        Write-Host "GetWindowRect failed for $hwnd"
+    if ([WinCap]::DwmGetWindowAttribute($hwnd, 9, [ref]$rect, 16) -ne 0 -and
+        -not [WinCap]::GetWindowRect($hwnd, [ref]$rect)) {
+        Write-Host "Could not read the window bounds for $hwnd"
         return $false
     }
     $w = $rect.Right - $rect.Left
@@ -50,10 +59,7 @@ function Capture-Hwnd([IntPtr]$hwnd, [string]$outPath) {
 
     $bmp = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.Clear([System.Drawing.Color]::FromArgb(255, 32, 32, 32))
-    $hdc = $g.GetHdc()
-    $ok = [WinCap]::PrintWindow($hwnd, $hdc, 2)  # PW_RENDERFULLCONTENT
-    $g.ReleaseHdc($hdc)
+    $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size($w, $h)))
 
     $dir = Split-Path -Parent $outPath
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
@@ -68,14 +74,6 @@ function Get-AppWindows([int]$processId) {
     $root = [System.Windows.Automation.AutomationElement]::RootElement
     $wins = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
     return @($wins)
-}
-
-function Find-TabItems([System.Windows.Automation.AutomationElement]$root) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [System.Windows.Automation.ControlType]::TabItem)
-    $tabs = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
-    return @($tabs)
 }
 
 function Slugify([string]$s) {
@@ -121,38 +119,86 @@ $hwnd = [IntPtr]$settingsWindow.Current.NativeWindowHandle
 [WinCap]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 300
 
-# Find all tab items inside the window
-$tabs = Find-TabItems $settingsWindow
-Write-Host ("Found {0} tabs: {1}" -f $tabs.Count, (($tabs | ForEach-Object { $_.Current.Name }) -join ', '))
+# The settings window navigates with a sidebar (WPF-UI NavigationView), one
+# page per item. Select each page by its sidebar label and capture it.
+$pages = @('Status', 'Gaming', 'Display', 'CPU and power', 'Telemetry', 'Windows AI',
+           'Network', 'Debloat', 'Services', 'BIOS', 'General')
 
-if ($tabs.Count -eq 0) {
-    # No tabs detected; fall back to a single full-window capture
-    Capture-Hwnd $hwnd (Join-Path $OutDir 'settings-window.png') | Out-Null
+function Find-NavItem([System.Windows.Automation.AutomationElement]$root, [string]$name) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty, $name)
+    foreach ($el in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)) {
+        if ($el.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text) { return $el }
+    }
+    return $null
 }
-else {
-    foreach ($tab in $tabs) {
-        $title = $tab.Current.Name
-        $slug = Slugify $title
-        try {
-            $sel = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-            $sel.Select()
-        }
-        catch {
-            Write-Host ("  skip tab '{0}' (no SelectionItem pattern): {1}" -f $title, $_.Exception.Message)
-            continue
-        }
-        Start-Sleep -Milliseconds $TabRenderWaitMs
-        Capture-Hwnd $hwnd (Join-Path $OutDir "settings-$slug.png") | Out-Null
-    }
 
-    # Also save the General-tab capture as the legacy banner filename so
-    # the README's existing reference keeps working.
-    $generalPath = Join-Path $OutDir 'settings-general.png'
-    $bannerPath = Join-Path $OutDir 'settings-window.png'
-    if (Test-Path $generalPath) {
-        Copy-Item $generalPath $bannerPath -Force
-        Write-Host "  copied: $bannerPath (legacy alias for the General tab)"
+# NavigationView items expose no Invoke/SelectionItem pattern, so click the
+# centre of the item with the mouse.
+function Select-NavItem([System.Windows.Automation.AutomationElement]$el) {
+    $r = $el.Current.BoundingRectangle
+    if ($r.IsEmpty -or $r.Width -le 0) { return $false }
+    [WinCap]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)) | Out-Null
+    [WinCap]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)  # left down
+    [WinCap]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)  # left up
+    return $true
+}
+
+# The scrollable content area of the current page: the first element with a
+# Scroll pattern under the page Frame (the sidebar has its own scroller).
+function Get-PageScroller([System.Windows.Automation.AutomationElement]$root) {
+    $frameCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ClassNameProperty, 'Frame')
+    $frame = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $frameCond)
+    if (-not $frame) { return $null }
+    $scrollCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::IsScrollPatternAvailableProperty, $true)
+    $sv = $frame.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $scrollCond)
+    if (-not $sv) { return $null }
+    return $sv.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
+}
+
+# Captures the page top as settings-<page>.png, then one screenful at a time
+# down to the bottom as settings-<page>-2.png, -3, ... so long pages are covered.
+function Capture-Page([string]$slug) {
+    Capture-Hwnd $hwnd (Join-Path $OutDir "settings-$slug.png") | Out-Null
+    $scroll = Get-PageScroller $settingsWindow
+    if (-not $scroll -or -not $scroll.Current.VerticallyScrollable) { return }
+    $n = 2
+    while ($scroll.Current.VerticalScrollPercent -lt 99.5 -and $n -le 20) {
+        $before = $scroll.Current.VerticalScrollPercent
+        $scroll.ScrollVertical([System.Windows.Automation.ScrollAmount]::LargeIncrement)
+        Start-Sleep -Milliseconds 400
+        if ($scroll.Current.VerticalScrollPercent -le $before) { break }
+        Capture-Hwnd $hwnd (Join-Path $OutDir "settings-$slug-$n.png") | Out-Null
+        $n++
     }
+    $scroll.SetScrollPercent([System.Windows.Automation.ScrollPattern]::NoScroll, 0)
+}
+
+# Expands the first "Learn more" panel on the current page and captures it, so
+# the docs show what the per-setting explanation looks like.
+function Capture-LearnMore([string]$slug) {
+    $item = Find-NavItem $settingsWindow 'Learn more'
+    if (-not $item) { return }
+    $p = $null
+    if ($item.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$p)) {
+        $p.Expand()
+    } elseif (-not (Select-NavItem $item)) { return }
+    Start-Sleep -Milliseconds 600
+    Capture-Hwnd $hwnd (Join-Path $OutDir "settings-$slug-learn-more.png") | Out-Null
+}
+
+foreach ($page in $pages) {
+    $item = Find-NavItem $settingsWindow $page
+    if (-not $item -or -not (Select-NavItem $item)) {
+        Write-Host ("  skip page '{0}' (not found or not selectable)" -f $page)
+        continue
+    }
+    Start-Sleep -Milliseconds $TabRenderWaitMs
+    $slug = Slugify $page
+    Capture-Page $slug
+    if ($page -eq 'Gaming') { Capture-LearnMore $slug }
 }
 
 Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
