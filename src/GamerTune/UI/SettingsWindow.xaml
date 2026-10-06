@@ -69,7 +69,8 @@
                 <ui:NavigationView.MenuItems>
 
                     <!-- Pinned above the groups: the drifted count, which is the only
-                         status surface (see docs/ui-overhaul.md "Decided against"). -->
+                         status surface (managed count, scan timestamp and pause
+                         reason deliberately omitted). -->
                     <ui:NavigationViewItem Content="Status" Tag="status" Click="NavItem_Click">
                         <ui:NavigationViewItem.Icon>
                             <ui:SymbolIcon Symbol="Pulse24"/>

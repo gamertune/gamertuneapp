@@ -13,8 +13,8 @@ namespace GamerTune.UI.Views;
 /// and the monitoring pause state.
 ///
 /// <para>Deliberately nothing else: no managed count, no last-scan timestamp, no
-/// pause reason, no pause persistence — all recorded as decided against in
-/// <c>docs/ui-overhaul.md</c>. The drifted count is the only status surface.</para>
+/// pause reason, no pause persistence — all deliberately decided against. The
+/// drifted count is the only status surface.</para>
 ///
 /// <para>Reads <see cref="MonitorService.CurrentDrift"/>, which the scan already
 /// publishes, so nothing here re-runs a drift check. Grouping uses

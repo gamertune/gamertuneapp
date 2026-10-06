@@ -164,7 +164,7 @@ public static class SettingDocs
             "powerplan" => $"powercfg /setactive {OrDefault(rawDesired, "(plan-guid)")}",
             // Template: the actual GUIDs/values are runtime-resolved and shown in
             // changes.log / the Apply Results window. The exact-overrides docs
-            // obligation is met by SettingDocsCatalog and docs/CPU-AWARE-POWER-PLANS.md.
+            // obligation is met by SettingDocsCatalog and the CPU-Power-Plans wiki page.
             "cpuplan" => "powercfg -duplicatescheme SCHEME_BALANCED  # -> <new-guid>; " +
                          "powercfg -setacvalueindex <new-guid> SUB_PROCESSOR <setting-guid> <value>  (repeat per override; actual GUIDs/values in changes.log); " +
                          "powercfg -setactive <new-guid>",
