@@ -9,6 +9,7 @@
 **Features**
 - [Settings & tabs guide](Settings-and-tabs)
 - [CPU-aware power plans](CPU-Power-Plans)
+- [Screenshots](Screenshots)
 
 **Develop**
 - [Build from source](Build-from-source)

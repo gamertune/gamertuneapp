@@ -38,13 +38,19 @@ It's also paranoid about not making your gaming worse. Polling pauses entirely d
 - 🔄 **Auto-update** — checks GitHub Releases on startup, one-click install
 - 🪶 **~23 MB idle working set**, ~10 ms per polling tick
 
-## Screenshot
+## Screenshots
 
 <div align="center">
 
-<img src="docs/screenshots/settings-global-gaming.png" width="780" alt="GamerTune Settings — Global gaming tab" />
+<img src="docs/screenshots/settings-status.png" width="780" alt="GamerTune Settings — Status dashboard" />
 
-*Settings → Global gaming tab. Each card shows the setting name, a short description, current value, Windows default, and per-setting Monitor / Want / Auto-apply controls. Reboot-required settings get a yellow badge. The other tabs cover General preferences (three one-click presets), **Privacy** (Advertising ID, Activity History, Cross-Device Platform, Tailored experiences, speech, inking), **Debloat** (ads / nags / suggested content), **Network** (Nagle's algorithm, NIC power management), Windows services, Windows AI, per-display Display settings (HDR / refresh / DRR), and CPU / Power.*
+*The Status dashboard: drift count, a summary of this PC, and drift per section.*
+
+<img src="docs/screenshots/settings-gaming.png" width="780" alt="GamerTune Settings — Gaming page" />
+
+*Settings → Gaming. Each card shows the setting, a short description, the current value, the Windows default and the recommendation, with per-setting Monitor / Want / Auto-apply controls; reboot-required settings get a yellow badge. The sidebar also covers Display (per-display HDR / refresh / DRR / resolution), CPU and power, Telemetry, Windows AI, Network, Debloat, Services, BIOS and General (three one-click presets).*
+
+**[See every page →](https://github.com/gamertune/gamertuneapp/wiki/Screenshots)**
 
 </div>
 

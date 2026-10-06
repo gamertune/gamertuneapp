@@ -9,7 +9,7 @@
 
    ![Settings window — General tab](https://raw.githubusercontent.com/gamertune/gamertuneapp/main/docs/screenshots/settings-general.png)
 
-   Click through the tabs to set per-display, global gaming, privacy, debloat, network, services, and AI preferences. Changes are staged as you toggle them — **Save & close** persists your choices and **Apply** writes them immediately and re-checks the system. For a fast start, the **General** tab has three one-click presets (Apply recommended / Apply extreme / Reset all to defaults).
+   Use the sidebar to set per-display, global gaming, privacy, debloat, network, services, and AI preferences. Changes are staged as you toggle them — **Save & close** persists your choices and **Apply** writes them immediately and re-checks the system. For a fast start, the **General** tab has three one-click presets (Apply recommended / Apply extreme / Reset all to defaults).
 
 A portable single-file `GamerTune.exe` is also attached to each release if you don't want the installer. Drop it anywhere and run it.
 
