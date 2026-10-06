@@ -1,0 +1,48 @@
+using GamerTune.Models;
+using GamerTune.Services;
+using Microsoft.Win32;
+
+namespace GamerTune.Monitors;
+
+public sealed class SystemResponsivenessMonitor : IMonitoredSetting
+{
+    public string Id => "sysresponse";
+
+    private const string SubKey = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile";
+    private const string ValueName = "SystemResponsiveness";
+    private const uint GamingValue = 10;
+    private const uint DefaultValue = 20;
+
+    public IEnumerable<DriftItem> CheckDrift(AppConfig config)
+    {
+        var pref = config.Global.SystemResponsiveness;
+
+        using var k = Registry.LocalMachine.OpenSubKey(SubKey, writable: false);
+        if (k?.GetValue(ValueName) is not int rawValue) yield break;
+        var current = rawValue <= (int)GamingValue;
+        if (current == pref.DesiredOn) yield break;
+
+        bool desired = pref.DesiredOn;
+        uint desiredRaw = desired ? GamingValue : DefaultValue;
+        yield return new DriftItem(
+            SettingId: Id,
+            DisplayKey: "global",
+            DisplayLabel: "Global",
+            Description: "System Responsiveness (multimedia CPU reservation)",
+            CurrentValue: current ? "Gaming" : "Default",
+            DesiredValue: desired ? "Gaming" : "Default",
+            AutoApply: pref.AutoApply,
+            Apply: () => Task.Run(() => ElevatedRegistry.SetHklmDword(SubKey, ValueName, desiredRaw)),
+            RequiresReboot: true,
+            IsMonitored: pref.Monitor,
+            RawBefore: rawValue.ToString(),
+            RawDesired: desiredRaw.ToString());
+    }
+
+    public static bool? ReadCurrent()
+    {
+        using var k = Registry.LocalMachine.OpenSubKey(SubKey, writable: false);
+        if (k?.GetValue(ValueName) is int v) return v <= (int)GamingValue;
+        return false;
+    }
+}
