@@ -147,6 +147,7 @@ All three are **idempotent**: each per-setting helper compares the draft's `(Des
 | `[APPLY-END  ]` | `LogApplyResults` | Same session id. Includes `verified=N/M` summary and total elapsed ms. |
 | `[EXTRESET  ]` | `LogExternalReset` | Windows or another tool changed a value we'd previously applied. Includes how long the previous applied value held and the current stickiness count. |
 | `[CIRCUIT   ]` | `LogCircuitBreaker` | The auto-apply circuit breaker tripped: Windows kept reverting a setting, so GamerTune suspended re-applying it for a cooldown (avoids spawning a UAC prompt / display reconfig every poll). Multi-line: `settingId`, `reason` (revert count -- "Windows reverted this N time(s) in a row"), `cooldown` (not auto-applied for D; retries once after), `action` (leave it notify-only, or untick Auto-apply). |
+| `[PLAN-NAME ]` | `LogPlanRename` | One-time rename of a power plan still carrying the app's previous name, done at startup. Only the friendly name changes. Multi-line: `scheme` (GUID), `before`, `after`, `verifyCmd` (`powercfg /list`). |
 | `[PAUSE     ]` | `LogPauseEvent` | MonitorService entered or left a paused state (fullscreen, benchmark, user manual). |
 | `[MEM       ]` | `LogMemorySnapshot` | Periodic process memory snapshot. |
 

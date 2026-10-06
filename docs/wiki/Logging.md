@@ -41,6 +41,7 @@ Every record opens with a fixed-width bracketed tag. Grep for the tag in bracket
 | `[MEM       ]` | A working-set / private-memory snapshot, written on each periodic memory trim. |
 | `[EXTRESET  ]` | Windows (or another tool) reverted a value the app had previously applied and verified. |
 | `[CIRCUIT   ]` | The auto-apply circuit breaker tripped: Windows kept reverting a setting, so re-applying it is suspended for a cooldown. |
+| `[PLAN-NAME ]` | A power plan GamerTune built under the app's previous name was renamed at startup. Only the name changes; the plan and its settings are untouched. |
 
 Fields on a per-change record:
 
