@@ -247,6 +247,29 @@ public static class ChangeLogger
         catch { }
     }
 
+    /// <summary>
+    /// Records the one-time rename of a power plan built before the app was renamed
+    /// (see <see cref="CpuPlanBuilder.RenameLegacyPlans"/>). Only the friendly name
+    /// changes; the scheme GUID and every setting in it are untouched.
+    /// </summary>
+    public static void LogPlanRename(Guid scheme, string before, string after, bool ok)
+    {
+        try
+        {
+            EnsureLogDir();
+            RotateIfNeeded();
+            var sb = new StringBuilder();
+            sb.AppendLine(Divider);
+            sb.AppendLine($"[{Now()}] [PLAN-NAME ] {(ok ? "OK    " : "FAILED")} renamed power plan to the current app name");
+            sb.AppendLine($"  scheme       : {scheme}");
+            sb.AppendLine($"  before       : {before}");
+            sb.AppendLine($"  after        : {after}");
+            sb.AppendLine($"  verifyCmd    : powercfg /list");
+            File.AppendAllText(LogPath, sb.ToString(), Encoding.UTF8);
+        }
+        catch { }
+    }
+
     private static string Format(ApplyResult r)
     {
         var status = r.ErrorMessage is not null ? "ERROR" : (r.Verified ? "OK" : "FAILED");

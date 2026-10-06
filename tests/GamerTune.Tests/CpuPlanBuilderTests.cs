@@ -167,6 +167,35 @@ public class CpuPlanBuilderTests
     }
 
     [Fact]
+    public void LegacyRenames_SwapsOnlyThePrefix_AndKeepsTheGuid()
+    {
+        var legacy = Guid.NewGuid();
+        var installed = new[] { Balanced, new InstalledPlan(legacy, "GamerGuardian Gaming [9850X3D · Balanced]") };
+
+        var rename = Assert.Single(CpuPlanBuilder.LegacyRenames(installed));
+
+        Assert.Equal(legacy, rename.Guid);
+        Assert.Equal("GamerGuardian Gaming [9850X3D · Balanced]", rename.OldName);
+        Assert.Equal("GamerTune Gaming [9850X3D · Balanced]", rename.NewName);
+    }
+
+    [Fact]
+    public void LegacyRenames_LeavesEverythingElseAlone()
+    {
+        var installed = new[]
+        {
+            Balanced,
+            new InstalledPlan(Guid.NewGuid(), "GamerTune Gaming [9850X3D · Balanced]"),  // already current
+            new InstalledPlan(Guid.NewGuid(), "My GamerGuardian Gaming [copy]"),         // prefix not at start
+            new InstalledPlan(Guid.NewGuid(), "My Custom Plan"),
+            // A user renamed a built-in to the legacy format; never touch a built-in.
+            new InstalledPlan(PowerPlanMonitor.HighPerformance, "GamerGuardian Gaming [x]"),
+        };
+
+        Assert.Empty(CpuPlanBuilder.LegacyRenames(installed));
+    }
+
+    [Fact]
     public void MaySafelyDelete_RecognizesPreRenamePlanName()
     {
         var legacy = Guid.NewGuid();
