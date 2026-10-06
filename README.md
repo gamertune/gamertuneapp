@@ -28,6 +28,8 @@ If you've ever fired up a game and realized 30 minutes later that HDR turned its
 
 It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. Its memory use is trimmed back to about 25 MB of RAM when idle — a tiny amount, less than a single web browser tab. No process spawning, no kernel hooks, no DPC callbacks.
 
+> **Yes, the name is terrible.** "GamerTune" won't win any branding awards — naming isn't my strong suit, and I'm a much better developer than I am a namer. The app, though, is genuinely, extremely useful. Got a better name? [Suggest one](https://gamertune.app/#suggest) — anonymously, no account needed.
+
 ## Highlights
 
 - 🎯 **29+ monitored settings** spanning display, security, performance, capture, input, privacy/telemetry, network latency, system tuning, and Windows services
