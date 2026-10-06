@@ -16,6 +16,15 @@ Versions before 1.0.0 are pre-release: features and defaults may still change.
 
 ## [Unreleased]
 
+### Fixed
+- **Your custom power plan now carries the app's current name.** After upgrading,
+  the plan GamerTune built for your CPU still showed its old name in Windows'
+  power plan list until you rebuilt it. It's now renamed automatically the first
+  time the app starts; only the name changes, and the plan and its settings stay
+  exactly as they were. The change is recorded in the change log.
+
+## [0.1.70] - 2026-10-06
+
 ### Changed
 - **New home.** Releases and updates now come from
   [github.com/gamertune/gamertuneapp](https://github.com/gamertune/gamertuneapp).

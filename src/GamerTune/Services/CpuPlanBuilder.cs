@@ -103,7 +103,37 @@ public static class CpuPlanBuilder
         g == PowerPlanMonitor.Balanced || g == PowerPlanMonitor.HighPerformance ||
         g == PowerPlanMonitor.PowerSaver || g == PowerPlanMonitor.UltimatePerformance;
 
+    /// <summary>Pure: plans built before the GamerGuardian -> GamerTune rename that
+    /// should get the current prefix, paired with their new name. Identity is the
+    /// same positive check the delete guard uses (legacy prefix, not a well-known
+    /// Microsoft plan); the part after the prefix is kept as-is.</summary>
+    public static IReadOnlyList<(Guid Guid, string OldName, string NewName)> LegacyRenames(
+        IReadOnlyCollection<InstalledPlan> installed) =>
+        installed
+            .Where(p => !IsWellKnownMicrosoft(p.Guid) &&
+                        p.Name.StartsWith(LegacyPlanNamePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(p => (p.Guid, p.Name, PlanNamePrefix + p.Name[LegacyPlanNamePrefix.Length..]))
+            .ToList();
+
     // ---- OS-mutating surface (not unit-tested) ----
+
+    /// <summary>Gives plans built before the rename the current name, so the power
+    /// plan list stops showing the old app name after an upgrade. Only the friendly
+    /// name changes -- the scheme GUID (which the config stores) and every setting
+    /// stay the same. Best-effort and idempotent: a no-op once nothing carries the
+    /// legacy prefix. Runs at startup.</summary>
+    public static void RenameLegacyPlans()
+    {
+        try
+        {
+            foreach (var (guid, oldName, newName) in LegacyRenames(InstalledPlans()))
+                ChangeLogger.LogPlanRename(guid, oldName, newName, Powrprof.WriteFriendlyName(guid, newName));
+        }
+        catch
+        {
+            // Never block startup on a cosmetic rename.
+        }
+    }
 
     /// <summary>Read the machine identity (scheme GUIDs are machine-local).</summary>
     public static string MachineToken()
