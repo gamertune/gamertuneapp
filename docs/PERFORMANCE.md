@@ -8,24 +8,29 @@ against every build before it ships.
 
 ## Summary
 
-Measured 2026-10-06 on the build that follows 0.1.71 (the changes below), compared
-with 0.1.71 as released.
+Measured 2026-10-06/07 on 0.1.72 (the changes below), compared with 0.1.71.
+Where a build was measured more than once, the range across runs is shown.
 
-| | 0.1.71 | Current build | Change |
+| | 0.1.71 | 0.1.72 | Change |
 |---|---|---|---|
-| **In the tray, idle** — private memory (committed) | 115 MB | **37.5 MB** | −67% |
-| **In the tray, idle** — working set (median) | 19.5 MB | **17.3 MB** | −11% |
-| **In the tray, idle** — CPU per 30 s polling cycle | 39 ms | **34 ms** (≈0.1% of one core) | within run-to-run noise |
-| **Settings window open** — peak private memory | 287 MB | **206 MB** | −28% |
-| **Settings window open** — peak working set | 152 MB | **147 MB** | −3% |
-| **After closing Settings** — private memory | 233 MB | **153 MB** | −34% |
-| **After closing Settings** — working set (median) | 28 MB | **25 MB** | −11% |
+| **In the tray, idle** — private memory (committed) | 115–116 MB (3 runs) | **37.5–37.7 MB** (2 runs) | −67% |
+| **In the tray, idle** — working set (median) | 19.5–20.3 MB | **17.3–19.5 MB** | slightly lower |
+| **In the tray, idle** — CPU per 30 s polling cycle | 36.5–39.1 ms | **31.2–33.9 ms** (≈0.1% of one core) | about the same |
+| **Settings window open** — peak private memory | 287 MB (1 run) | **206–281 MB** | 2–28% lower |
+| **Settings window open** — peak working set | 152 MB | **147–172 MB** | about the same |
+| **After closing Settings** — private memory | 233 MB | **153–175 MB** | 25–34% lower |
+| **After closing Settings** — working set (median) | 28 MB | **24–25 MB** | slightly lower |
 | Installer download | 72 MB | **52 MB** | −28% |
 | Installed `GamerTune.exe` on disk | 77 MB | 185 MB | **+108 MB** |
 
-In one line: about **17 MB of RAM and 38 MB of committed memory while it sits in
-the tray**, roughly 0.1% of one CPU core, and noticeably more (about 150 MB
+In one line: **under 20 MB of RAM and about 38 MB of committed memory while it sits
+in the tray**, roughly 0.1% of one CPU core, and noticeably more (about 150–175 MB
 committed, measured 4 minutes after closing) once you have opened the Settings window.
+
+The tray figures repeat closely from run to run. The Settings-window figures do
+not: two runs of the identical 0.1.72 build peaked at 206 MB and 281 MB, because
+the peak depends on when .NET's garbage collector happens to run relative to the
+samples. Treat those as ranges, not exact numbers.
 
 ## What the two memory numbers mean
 
@@ -121,7 +126,8 @@ memory unchanged (37.7 → 36.8 MB), CPU unchanged. A small win, but a free one.
 | B — uncompressed | 21.0 MB | 37.7 MB | 40.4 ms |
 | C — uncompressed + GC settings | 17.2 MB | 36.8 MB | 39.1 ms |
 | D — uncompressed, periodic trim switched off | 49.3 MB | 36.8 MB | 27.3 ms |
-| Final — C built from the repo (shipping) | 17.3 MB | 37.5 MB | 33.9 ms |
+| Final — C built from the repo, run 1 | 17.3 MB | 37.5 MB | 33.9 ms |
+| Final — 0.1.72 release build, run 2 | 19.5 MB | 37.7 MB | 31.2 ms |
 
 ## What we tested and kept as it is
 
@@ -151,9 +157,9 @@ launch Windows' own tools in these cases:
 ## Still heavier than it should be
 
 - **The Settings window leaves memory behind.** Opening it and visiting every page
-  raises private memory to about 206 MB; after closing it about 153 MB stays
+  raises private memory to about 206–281 MB; after closing it about 153–175 MB stays
   committed, still there 4 minutes later (working set does drop back to ~25 MB
-  thanks to the trim). That retained ~115 MB is the largest remaining cost and
+  thanks to the trim). That retained ~115–140 MB is the largest remaining cost and
   the next thing to investigate. It has not been profiled yet; the likely cause
   is WPF and the UI library keeping their loaded resources and caches.
 - **The scheduled-task and AI-app checks launch processes.** Both could use

@@ -108,7 +108,7 @@ The trimming code:
 - Every 5 polling ticks (~2.5 minutes): GC Gen 2, `EmptyWorkingSet`
 - `RetainVMGarbageCollection=false` in csproj — runtime returns memory aggressively
 
-Net effect, measured: working set peaks around 147 MB with the Settings window open and drops back to ~25 MB after it closes (~17 MB if Settings was never opened). Trimming pages memory out of RAM rather than releasing it, so committed memory stays higher: ~153 MB after closing Settings, ~38 MB in the tray otherwise. Trimming costs about 12 ms of CPU per 30-second cycle; without it the tray working set sits near 49 MB. Method and full results: [docs/PERFORMANCE.md](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md).
+Net effect, measured: working set peaks around 150–170 MB with the Settings window open and drops back to ~25 MB after it closes (~17–20 MB if Settings was never opened). Trimming pages memory out of RAM rather than releasing it, so committed memory stays higher: ~150–175 MB after closing Settings, ~38 MB in the tray otherwise. Trimming costs about 12 ms of CPU per 30-second cycle; without it the tray working set sits near 49 MB. Method and full results: [docs/PERFORMANCE.md](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md).
 
 ## How DRR is monitored
 
