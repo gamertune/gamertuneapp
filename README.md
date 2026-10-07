@@ -26,7 +26,9 @@ A lightweight Windows 11 tray app that watches gaming-related display and system
 
 If you've ever fired up a game and realized 30 minutes later that HDR turned itself off after the last driver update, or that you've been gaming at 60 Hz instead of your monitor's actual max — GamerTune is for that. It periodically compares Windows settings against your preferences and either prompts you to fix drift in one click, or silently corrects it in the background.
 
-It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. In the tray it uses about 17 MB of RAM and roughly 0.1% of one CPU core, measured on every build ([how, and the trade-offs](docs/PERFORMANCE.md)). No kernel hooks, no drivers, no DPC callbacks.
+It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. In the tray it uses about 17 MB of RAM — less than a single web browser tab — and roughly 0.1% of one CPU core, measured on every build ([how, and the trade-offs](docs/PERFORMANCE.md)). No kernel hooks, no drivers, no DPC callbacks.
+
+> **Yes, the name is terrible.** "GamerTune" won't win any branding awards — naming isn't my strong suit, and I'm a much better developer than I am a namer. The app, though, is genuinely, extremely useful. Got a better name? [Suggest one](https://gamertune.app/#suggest) — anonymously, no account needed.
 
 ## Highlights
 
@@ -36,7 +38,7 @@ It's also paranoid about not making your gaming worse. Polling pauses entirely d
 - ⚡ **One-click apply** with a per-setting auto-apply opt-in
 - 🪟 **Native Win11 Fluent design** with light / dark / system themes
 - 🔄 **Auto-update** — checks GitHub Releases on startup, one-click install
-- 🪶 **~17 MB in RAM in the tray** (38 MB committed), ~34 ms of CPU per 30-second check — [measured](docs/PERFORMANCE.md)
+- 🪶 **~17 MB of RAM in the tray** — less than a single browser tab (38 MB committed); ~34 ms of CPU per 30-second check — [measured](docs/PERFORMANCE.md)
 
 ## Screenshots
 
