@@ -26,7 +26,7 @@ A lightweight Windows 11 tray app that watches gaming-related display and system
 
 If you've ever fired up a game and realized 30 minutes later that HDR turned itself off after the last driver update, or that you've been gaming at 60 Hz instead of your monitor's actual max — GamerTune is for that. It periodically compares Windows settings against your preferences and either prompts you to fix drift in one click, or silently corrects it in the background.
 
-It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. Working set is trimmed back to ~25 MB at idle. No process spawning, no kernel hooks, no DPC callbacks.
+It's also paranoid about not making your gaming worse. Polling pauses entirely during fullscreen games (including borderless windowed) and benchmark runs. In the tray it uses about 17 MB of RAM and roughly 0.1% of one CPU core, measured on every build ([how, and the trade-offs](docs/PERFORMANCE.md)). No kernel hooks, no drivers, no DPC callbacks.
 
 ## Highlights
 
@@ -36,7 +36,7 @@ It's also paranoid about not making your gaming worse. Polling pauses entirely d
 - ⚡ **One-click apply** with a per-setting auto-apply opt-in
 - 🪟 **Native Win11 Fluent design** with light / dark / system themes
 - 🔄 **Auto-update** — checks GitHub Releases on startup, one-click install
-- 🪶 **~23 MB idle working set**, ~10 ms per polling tick
+- 🪶 **~17 MB in RAM in the tray** (38 MB committed), ~34 ms of CPU per 30-second check — [measured](docs/PERFORMANCE.md)
 
 ## Screenshots
 
@@ -112,14 +112,21 @@ Policy-toggle disables for Copilot, Recall, Click-to-Do, Edge Copilot/Hubs/GenAI
 
 ## Performance & gaming impact
 
-Designed to be invisible during gameplay.
+Designed to be invisible during gameplay. Every number here is measured on each build with [`tools/measure-footprint.ps1`](tools/measure-footprint.ps1); method, raw results and trade-offs are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
-- **~23 MB working set** at idle, **~10 ms** per polling tick. Only the four display settings (HDR, refresh rate, resolution, DRR) are polled on the fast interval (default 30 s); the ~40 set-and-forget registry / policy / service settings are re-checked at startup, on resume / unlock / display-change events, and on a slow 10-minute backstop instead — so the fast tick does almost nothing most of the time.
+| | RAM in use (working set) | Committed memory (private) |
+|---|---|---|
+| In the tray, idle | **~17 MB** (median; swings 1–47 MB between trims) | **~38 MB** |
+| Settings window open (peak) | ~147 MB | ~206 MB |
+| After closing Settings (4 min later) | ~25 MB | ~153 MB |
+
+- **CPU:** about **34 ms per 30-second check** in the tray — roughly 0.1% of one CPU core. Only the four display settings (HDR, refresh rate, resolution, DRR) are checked every 30 s; the ~40 set-and-forget registry / policy / service settings are re-checked at startup, on resume / unlock / display-change events, and on a slow 10-minute backstop.
+- **Why two memory numbers:** every ~2.5 minutes the app pages its memory out of RAM, which keeps the working set (Task Manager's default *Memory* column) small but doesn't release the memory. *Committed* memory (Task Manager → Details → Commit size) is the fuller picture.
+- **The Settings window is the heavy part.** About 115 MB of it stays committed after you close the window: RAM use drops back, but the commitment was still there 4 minutes later (the longest we measured). Reducing this is the next optimisation target.
+- **Disk and download:** the installer is ~52 MB; installed, `GamerTune.exe` is ~185 MB. It's deliberately uncompressed — compressing it would shrink the file to ~77 MB but cost ~80 MB more committed memory every time it runs.
 - **Pauses entirely** during fullscreen games, borderless-fullscreen games, and known benchmarks (3DMark, Cinebench, Geekbench, AIDA64, Unigine, OCCT, etc.).
-- **No process spawning** for reads. Power plan reads/writes go through `powrprof.dll` directly.
-- **No kernel hooks, no drivers, no admin** — only HKLM writes need elevation, which prompts UAC.
-
-Memory + pause-detection details: [Build from source](https://github.com/gamertune/gamertuneapp/wiki/Build-from-source) (CI build flags) and [`MonitorService.cs`](src/GamerTune/Services/MonitorService.cs).
+- **Process launches:** none while watching display settings, and power plan, registry and display reads use Windows APIs directly. It does run Windows' own tools in a few cases — `schtasks.exe` on the 10-minute check for scheduled tasks you manage, `powershell.exe` for Windows AI apps you've set to *Removed*, and `reg.exe` / `sc.exe` / `schtasks.exe` behind the UAC prompt when applying changes. [Full list](docs/PERFORMANCE.md#process-launches--the-full-list).
+- **No kernel hooks, no drivers, no admin** — only machine-wide changes need elevation, which prompts UAC.
 
 ## How it works
 
