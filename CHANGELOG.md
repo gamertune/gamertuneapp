@@ -16,6 +16,8 @@ Versions before 1.0.0 are pre-release: features and defaults may still change.
 
 ## [Unreleased]
 
+## [0.1.72] - 2026-10-07
+
 ### Changed
 - **Uses about a third of the memory in the tray.** GamerTune now commits about
   38 MB while it sits in the tray, down from about 115 MB, and about 153 MB after
@@ -26,7 +28,8 @@ Versions before 1.0.0 are pre-release: features and defaults may still change.
   on disk (about 185 MB, up from 77 MB).
 - **Accurate performance figures.** The README's memory and CPU numbers are now
   measured on every build rather than estimated; how they're measured, and the
-  trade-offs, are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+  trade-offs, are in
+  [docs/PERFORMANCE.md](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md).
 
 ## [0.1.71] - 2026-10-06
 
