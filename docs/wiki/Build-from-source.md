@@ -25,11 +25,11 @@ dotnet publish src/GamerTune/GamerTune.csproj `
     -c Release -r win-x64 --self-contained `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
+    -p:EnableCompressionInSingleFile=false `
     -p:Version=0.0.0 -o publish
 ```
 
-This produces `publish/GamerTune.exe` (~77 MB) — runs standalone with no .NET runtime needed.
+This produces `publish/GamerTune.exe` (~185 MB) — runs standalone with no .NET runtime needed. Compression is deliberately off: an uncompressed bundle lets the runtime map its libraries straight from the EXE instead of unpacking them into memory, which cuts the app's committed memory by about two thirds (see [Performance](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md)).
 
 ## Local installer build
 
@@ -37,7 +37,7 @@ This produces `publish/GamerTune.exe` (~77 MB) — runs standalone with no .NET 
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=0.0.0 installer\GamerTune.iss
 ```
 
-Output: `installer\Output\GamerTune-Setup-0.0.0.exe` (~71 MB). The Inno script picks up the file from `publish/` produced by the previous step.
+Output: `installer\Output\GamerTune-Setup-0.0.0.exe` (~52 MB). The Inno script picks up the file from `publish/` produced by the previous step.
 
 ## CI / dev builds
 

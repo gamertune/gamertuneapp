@@ -16,6 +16,18 @@ Versions before 1.0.0 are pre-release: features and defaults may still change.
 
 ## [Unreleased]
 
+### Changed
+- **Uses about a third of the memory in the tray.** GamerTune now commits about
+  38 MB while it sits in the tray, down from about 115 MB, and about 153 MB after
+  you've opened the Settings window, down from about 233 MB. The app's libraries
+  are no longer unpacked into memory at startup; Windows reads them straight
+  from the program file instead. The installer download is also smaller (about
+  52 MB, down from 72 MB). The trade-off: the installed program file is larger
+  on disk (about 185 MB, up from 77 MB).
+- **Accurate performance figures.** The README's memory and CPU numbers are now
+  measured on every build rather than estimated; how they're measured, and the
+  trade-offs, are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
 ## [0.1.71] - 2026-10-06
 
 ### Fixed
