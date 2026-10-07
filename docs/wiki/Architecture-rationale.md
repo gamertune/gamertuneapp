@@ -44,7 +44,7 @@ Any of the three firing pauses the polling tick entirely. No drift checks, no no
 
 The benchmark allowlist is hand-curated rather than heuristic because **false positives during benchmarks are unforgivable** — a registry-touching tool is exactly the kind of "background process" benchmark guides tell you to disable. Hand-curation lets us be deliberate about what we whitelist.
 
-## Why a single-file self-contained .NET publish (~77 MB)
+## Why a single-file self-contained .NET publish (~185 MB, uncompressed)
 
 Three options were on the table:
 
@@ -52,9 +52,11 @@ Three options were on the table:
 |---|---|---|
 | Framework-dependent .NET 8 | ~3 MB | User must install .NET 8 runtime separately |
 | Self-contained, multi-file | ~140 MB on disk | One folder with 100+ files; messy, makes spelunking harder |
-| Self-contained, single-file (chosen) | ~77 MB on disk | Slightly slower cold start as the single-file extracts on first run |
+| Self-contained, single-file (chosen) | ~185 MB on disk | One EXE; the runtime maps its libraries directly from it |
 
-The size cost is real but **predictable** — every release is the same ~77 MB regardless of what's inside. The trust cost of "go install the .NET 8 runtime first" is non-trivial: it asks the user to install a much larger system component just to run a tray app. Self-contained means GamerTune's binary is the only new code on the user's system.
+The single file is published **uncompressed**. A compressed bundle is smaller on disk (~77 MB) but has to be unpacked into private memory every time the app starts: measured, that is ~115 MB of committed memory versus ~37 MB uncompressed, where the runtime maps the libraries straight from the EXE and pages in only what it uses. The installer re-compresses everything with LZMA, so the download actually got smaller (~72 MB → ~52 MB); only the installed size grew. Measurements and method: [docs/PERFORMANCE.md](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md).
+
+The size cost is real but **predictable** — every release is about the same size regardless of what's inside. The trust cost of "go install the .NET 8 runtime first" is non-trivial: it asks the user to install a much larger system component just to run a tray app. Self-contained means GamerTune's binary is the only new code on the user's system.
 
 Single-file specifically (vs. multi-file) makes "what is this?" easier to answer: one EXE, one set of hashes in [`SHA256SUMS.txt`](Security#reproducibility), no DLL substitution surface.
 
@@ -106,7 +108,7 @@ The trimming code:
 - Every 5 polling ticks (~2.5 minutes): GC Gen 2, `EmptyWorkingSet`
 - `RetainVMGarbageCollection=false` in csproj — runtime returns memory aggressively
 
-Net effect: ~135 MB peak after first Settings open → ~25 MB at idle within minutes. Verified empirically over hours of runtime.
+Net effect, measured: working set peaks around 147 MB with the Settings window open and drops back to ~25 MB after it closes (~17 MB if Settings was never opened). Trimming pages memory out of RAM rather than releasing it, so committed memory stays higher: ~153 MB after closing Settings, ~38 MB in the tray otherwise. Trimming costs about 12 ms of CPU per 30-second cycle; without it the tray working set sits near 49 MB. Method and full results: [docs/PERFORMANCE.md](https://github.com/gamertune/gamertuneapp/blob/main/docs/PERFORMANCE.md).
 
 ## How DRR is monitored
 

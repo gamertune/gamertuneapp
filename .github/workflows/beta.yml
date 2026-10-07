@@ -73,7 +73,7 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
+          -p:EnableCompressionInSingleFile=false
           -p:Beta=true
           -p:Version=${{ steps.ver.outputs.base }}
           -p:AssemblyVersion=${{ steps.ver.outputs.base }}.0
@@ -83,12 +83,11 @@ jobs:
 
       # Fails the run if the update path somehow survived into a beta build.
       #
-      # Scans the managed assembly, NOT publish\GamerTune.exe. The shipped EXE is
-      # a single-file bundle published with EnableCompressionInSingleFile, so its
-      # assemblies are compressed: scanning the EXE's bytes finds nothing even in a
-      # stable build. An earlier version of this step did exactly that and passed on
-      # both flavors, which made it false assurance rather than a check. The DLL
-      # below is the same assembly that gets bundled into that EXE.
+      # Scans the managed assembly, NOT publish\GamerTune.exe. The DLL below is the
+      # same assembly that gets bundled into that EXE, and scanning it doesn't depend
+      # on how the bundle is packed. (When bundles were published compressed, an
+      # earlier version of this step scanned the EXE's bytes, found nothing even in a
+      # stable build, and passed on both flavors -- false assurance, not a check.)
       #
       # build.yml proves this check can actually fail, by asserting the differential
       # against a stable build. Here we only assert the absolute property.

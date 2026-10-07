@@ -14,7 +14,13 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Version>0.1.0</Version>
     <ServerGarbageCollection>false</ServerGarbageCollection>
-    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- Lightweight runtime for a tray app with a tiny heap (measured in
+         docs/PERFORMANCE.md): no background GC thread (blocking collections of
+         a few MB take well under a millisecond) and no dynamic-PGO
+         instrumentation, which only pays off in long hot loops this app doesn't
+         have. -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
     <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
     <TieredCompilation>true</TieredCompilation>
     <Company>GamerTune Contributors</Company>
